@@ -8,7 +8,7 @@ edition = "2021"
 sa-token-plugin-axum = { path = "../../sa-token-plugin-axum" }
 
 # Web 框架
-axum = "0.7"
+axum = "0.8.7"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace"] }
