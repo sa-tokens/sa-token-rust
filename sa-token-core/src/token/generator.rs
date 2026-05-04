@@ -35,6 +35,28 @@ impl TokenGenerator {
         }
     }
     
+    /// Generate token with login_id and extra data | 根据配置生成带有额外数据的 token
+    ///
+    /// 当 token_style 为 JWT 时，extra_data 会被签名到 JWT Claims 中。
+    /// 其他风格不支持在 token 本身携带数据，extra_data 仅存储在 storage 中。
+    ///
+    /// # Arguments | 参数
+    ///
+    /// * `config` - Sa-token configuration | Sa-token 配置
+    /// * `login_id` - User login ID | 用户登录ID
+    /// * `extra_data` - Extra data to sign into JWT | 要签名到 JWT 中的额外数据
+    pub fn generate_with_login_id_and_extra(
+        config: &SaTokenConfig,
+        login_id: &str,
+        extra_data: &serde_json::Value,
+    ) -> TokenValue {
+        match config.token_style {
+            TokenStyle::Jwt => Self::generate_jwt_with_extra(config, login_id, extra_data),
+            // 非 JWT 风格无法在 token 中携带 extra 数据，走原有生成逻辑
+            _ => Self::generate_with_login_id(config, login_id),
+        }
+    }
+    
     /// Generate token (backward compatible) | 根据配置生成 token（向后兼容）
     pub fn generate(config: &SaTokenConfig) -> TokenValue {
         Self::generate_with_login_id(config, "")
@@ -108,6 +130,76 @@ impl TokenGenerator {
             Err(e) => {
                 eprintln!("Failed to generate JWT token: {:?}", e);
                 // Fallback to UUID | 回退到 UUID
+                Self::generate_uuid()
+            }
+        }
+    }
+    
+    /// Generate JWT token with extra data signed into claims | 生成带有额外数据签名的 JWT token
+    ///
+    /// 与 `generate_jwt` 类似，但会将 `extra_data` 写入 JWT Claims 中，
+    /// 使得 extra 数据成为 token 签名的一部分。
+    ///
+    /// # Arguments | 参数
+    ///
+    /// * `config` - Sa-token configuration | Sa-token 配置
+    /// * `login_id` - User login ID | 用户登录ID
+    /// * `extra_data` - Extra data to embed in JWT claims | 要签入 JWT 声明的额外数据
+    pub fn generate_jwt_with_extra(
+        config: &SaTokenConfig,
+        login_id: &str,
+        extra_data: &serde_json::Value,
+    ) -> TokenValue {
+        let effective_login_id = if login_id.is_empty() {
+            Utc::now().timestamp_millis().to_string()
+        } else {
+            login_id.to_string()
+        };
+        
+        let secret = config.jwt_secret_key.as_ref()
+            .expect("JWT secret key is required when using JWT token style");
+        
+        let algorithm = config.jwt_algorithm.as_ref()
+            .and_then(|alg| Self::parse_jwt_algorithm(alg))
+            .unwrap_or(JwtAlgorithm::HS256);
+        
+        let mut jwt_manager = JwtManager::with_algorithm(secret, algorithm);
+        
+        if let Some(ref issuer) = config.jwt_issuer {
+            jwt_manager = jwt_manager.set_issuer(issuer);
+        }
+        
+        if let Some(ref audience) = config.jwt_audience {
+            jwt_manager = jwt_manager.set_audience(audience);
+        }
+        
+        let mut claims = JwtClaims::new(effective_login_id);
+        
+        if config.timeout > 0 {
+            claims.set_expiration(config.timeout);
+        }
+        
+        // 将 extra_data 写入 JWT claims
+        // If extra_data is an Object, flatten each key-value into claims.extra
+        // Otherwise, store the entire value under "extra" key
+        match extra_data {
+            serde_json::Value::Object(map) => {
+                for (key, value) in map {
+                    claims.add_claim(key.clone(), value.clone());
+                }
+            }
+            serde_json::Value::Null => {
+                // Null 值不写入
+            }
+            other => {
+                claims.add_claim("extra", other.clone());
+            }
+        }
+        
+        match jwt_manager.generate(&claims) {
+            Ok(token) => TokenValue::new(token),
+            Err(e) => {
+                eprintln!("Failed to generate JWT token with extra: {:?}", e);
                 Self::generate_uuid()
             }
         }
@@ -207,5 +299,104 @@ impl TokenGenerator {
         }
         
         TokenValue::new(token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{SaTokenConfig, TokenStyle};
+    use crate::token::jwt::JwtManager;
+
+    fn jwt_config() -> SaTokenConfig {
+        let mut config = SaTokenConfig::default();
+        config.token_style = TokenStyle::Jwt;
+        config.jwt_secret_key = Some("test-secret-key-for-jwt".to_string());
+        config.timeout = 3600;
+        config
+    }
+
+    #[test]
+    fn test_generate_jwt_with_extra_object() {
+        let config = jwt_config();
+        let extra = serde_json::json!({
+            "role": "admin",
+            "tenant_id": 42,
+            "permissions": ["read", "write"]
+        });
+
+        let token = TokenGenerator::generate_jwt_with_extra(&config, "user_123", &extra);
+        assert!(!token.as_str().is_empty());
+
+        // 解析 JWT 验证 extra 数据已签入
+        let jwt_manager = JwtManager::new("test-secret-key-for-jwt");
+        let claims = jwt_manager.validate(token.as_str()).unwrap();
+
+        assert_eq!(claims.login_id, "user_123");
+        assert_eq!(claims.get_claim("role"), Some(&serde_json::json!("admin")));
+        assert_eq!(claims.get_claim("tenant_id"), Some(&serde_json::json!(42)));
+        assert_eq!(
+            claims.get_claim("permissions"),
+            Some(&serde_json::json!(["read", "write"]))
+        );
+    }
+
+    #[test]
+    fn test_generate_jwt_with_extra_non_object() {
+        let config = jwt_config();
+        let extra = serde_json::json!("simple_string_value");
+
+        let token = TokenGenerator::generate_jwt_with_extra(&config, "user_456", &extra);
+
+        let jwt_manager = JwtManager::new("test-secret-key-for-jwt");
+        let claims = jwt_manager.validate(token.as_str()).unwrap();
+
+        assert_eq!(claims.login_id, "user_456");
+        assert_eq!(
+            claims.get_claim("extra"),
+            Some(&serde_json::json!("simple_string_value"))
+        );
+    }
+
+    #[test]
+    fn test_generate_jwt_with_extra_null() {
+        let config = jwt_config();
+        let extra = serde_json::Value::Null;
+
+        let token = TokenGenerator::generate_jwt_with_extra(&config, "user_789", &extra);
+
+        let jwt_manager = JwtManager::new("test-secret-key-for-jwt");
+        let claims = jwt_manager.validate(token.as_str()).unwrap();
+
+        assert_eq!(claims.login_id, "user_789");
+        assert!(claims.extra.is_empty());
+    }
+
+    #[test]
+    fn test_generate_with_login_id_and_extra_jwt_style() {
+        let config = jwt_config();
+        let extra = serde_json::json!({"key": "value"});
+
+        let token = TokenGenerator::generate_with_login_id_and_extra(&config, "user_jwt", &extra);
+
+        // JWT token 包含两个 '.' 分隔符
+        assert!(token.as_str().contains('.'));
+
+        let jwt_manager = JwtManager::new("test-secret-key-for-jwt");
+        let claims = jwt_manager.validate(token.as_str()).unwrap();
+        assert_eq!(claims.get_claim("key"), Some(&serde_json::json!("value")));
+    }
+
+    #[test]
+    fn test_generate_with_login_id_and_extra_non_jwt_style() {
+        let mut config = SaTokenConfig::default();
+        config.token_style = TokenStyle::Uuid;
+        let extra = serde_json::json!({"key": "value"});
+
+        // 非 JWT 风格应该走正常生成逻辑，不 panic
+        let token = TokenGenerator::generate_with_login_id_and_extra(&config, "user_uuid", &extra);
+        assert!(!token.as_str().is_empty());
+        // UUID 格式不包含 '.'
+        assert!(!token.as_str().contains('.'));
     }
 }

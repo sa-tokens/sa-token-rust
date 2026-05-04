@@ -25,7 +25,7 @@ sa-token-storage-database = { version = "0.1.12", optional = true }
 # Axum 框架依赖
 tokio = { workspace = true }
 async-trait = { workspace = true }
-axum = "0.8.4"
+axum = "0.8.7"
 tower = { workspace = true }
 http = { workspace = true }
 http-body = "1.0"

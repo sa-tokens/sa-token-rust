@@ -106,8 +106,11 @@ impl SaTokenManager {
     ) -> SaTokenResult<TokenValue> {
         let login_id = login_id.into();
         
-        // 生成 token（支持 JWT）
-        let token = TokenGenerator::generate_with_login_id(&self.config, &login_id);
+        // 生成 token（支持 JWT，如果有 extra_data 则签入 token）
+        let token = match &extra_data {
+            Some(extra) => TokenGenerator::generate_with_login_id_and_extra(&self.config, &login_id, extra),
+            None => TokenGenerator::generate_with_login_id(&self.config, &login_id),
+        };
         
         // 创建 token 信息
         let mut token_info = TokenInfo::new(token.clone(), login_id.clone());

@@ -61,11 +61,30 @@ impl RefreshTokenManager {
     /// * `refresh_token` - Refresh token | Refresh token
     /// * `access_token` - Associated access token | 关联的访问令牌
     /// * `login_id` - User login ID | 用户登录ID
+    /// * `extra_data` - Extra data from JWT claims (tenant_id, username, etc.)
     pub async fn store(
         &self,
         refresh_token: &str,
         access_token: &str,
         login_id: &str,
+    ) -> SaTokenResult<()> {
+        self.store_with_extra(refresh_token, access_token, login_id, None).await
+    }
+
+    /// Store refresh token with associated access token and extra data
+    ///
+    /// # Arguments | 参数
+    ///
+    /// * `refresh_token` - Refresh token | Refresh token
+    /// * `access_token` - Associated access token | 关联的访问令牌
+    /// * `login_id` - User login ID | 用户登录ID
+    /// * `extra_data` - Optional extra data to preserve across refresh
+    pub async fn store_with_extra(
+        &self,
+        refresh_token: &str,
+        access_token: &str,
+        login_id: &str,
+        extra_data: Option<&serde_json::Value>,
     ) -> SaTokenResult<()> {
         let key = format!("sa:refresh:{}", refresh_token);
         let expire_time = if self.config.refresh_token_timeout > 0 {
@@ -74,12 +93,16 @@ impl RefreshTokenManager {
             None
         };
 
-        let value = serde_json::json!({
+        let mut obj = serde_json::json!({
             "access_token": access_token,
             "login_id": login_id,
             "created_at": Utc::now().to_rfc3339(),
             "expire_time": expire_time.map(|t| t.to_rfc3339()),
-        }).to_string();
+        });
+        if let Some(extra) = extra_data {
+            obj["extra_data"] = extra.clone();
+        }
+        let value = obj.to_string();
 
         let ttl = if self.config.refresh_token_timeout > 0 {
             Some(std::time::Duration::from_secs(self.config.refresh_token_timeout as u64))
@@ -150,10 +173,7 @@ impl RefreshTokenManager {
         // Validate refresh token
         let login_id = self.validate(refresh_token).await?;
 
-        // Generate new access token
-        let new_access_token = TokenGenerator::generate_with_login_id(&self.config, &login_id);
-
-        // Update stored refresh token with new access token
+        // Read stored refresh token data (contains extra_data)
         let key = format!("sa:refresh:{}", refresh_token);
         let value_str = self.storage.get(&key)
             .await
@@ -163,6 +183,14 @@ impl RefreshTokenManager {
         let mut value: serde_json::Value = serde_json::from_str(&value_str)
             .map_err(|_| SaTokenError::RefreshTokenInvalidData)?;
 
+        // Generate new access token (with extra_data if present)
+        let extra_data = value.get("extra_data").cloned();
+        let new_access_token = match &extra_data {
+            Some(extra) => TokenGenerator::generate_with_login_id_and_extra(&self.config, &login_id, extra),
+            None => TokenGenerator::generate_with_login_id(&self.config, &login_id),
+        };
+
+        // Update stored refresh token with new access token
         value["access_token"] = serde_json::json!(new_access_token.as_str());
         value["refreshed_at"] = serde_json::json!(Utc::now().to_rfc3339());
 

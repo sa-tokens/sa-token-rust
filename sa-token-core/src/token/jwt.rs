@@ -128,6 +128,7 @@ pub struct JwtClaims {
     pub device: Option<String>,
 
     /// Custom data | 自定义数据
+    #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }

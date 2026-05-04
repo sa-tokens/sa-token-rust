@@ -633,7 +633,7 @@ mod tests {
     #[async_trait]
     impl SaTokenListener for TestListener {
         async fn on_login(&self, _login_id: &str, _token: &str, _login_type: &str) {
-            let mut count = self.login_count.write().await;
+            let mut count = self.login_count.write().unwrap();
             *count += 1;
         }
     }
@@ -644,14 +644,14 @@ mod tests {
         let listener = Arc::new(TestListener::new());
         let login_count = Arc::clone(&listener.login_count);
         
-        bus.register(listener).await;
+        bus.register(listener);
         
         // 发布登录事件
         let event = SaTokenEvent::login("user_123", "token_abc");
         bus.publish(event).await;
         
         // 验证监听器被调用
-        let count = login_count.read().await;
+        let count = login_count.read().unwrap();
         assert_eq!(*count, 1);
     }
 

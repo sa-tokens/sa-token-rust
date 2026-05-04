@@ -137,9 +137,14 @@ impl StpUtil {
         login_id: impl LoginId,
         extra_data: serde_json::Value,
     ) -> SaTokenResult<TokenValue> {
-        let token = Self::get_manager().login(login_id.to_login_id()).await?;
-        Self::set_extra_data(&token, extra_data).await?;
-        Ok(token)
+        Self::get_manager().login_with_options(
+            login_id.to_login_id(),
+            None,    // login_type
+            None,    // device
+            Some(extra_data),
+            None,    // nonce
+            None,    // expire_time
+        ).await
     }
     
     /// 会话登录（带 manager 参数的版本，向后兼容）

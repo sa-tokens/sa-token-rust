@@ -3731,6 +3731,8 @@ version = "0.1.12"
 dependencies = [
  "proc-macro2",
  "quote",
+ "sa-token-core",
+ "sa-token-storage-memory",
  "syn 2.0.110",
  "tokio",
 ]
