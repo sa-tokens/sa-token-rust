@@ -26,6 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v4
+        with:
+          enablement: true
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run build
