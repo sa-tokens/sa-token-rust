@@ -6,17 +6,19 @@ sa-token-rust supports 9 web frameworks through dedicated plugin packages. Each 
 
 ## Supported Frameworks
 
-| Framework | Plugin Package | Status |
+| Framework | Plugin Package | Notes (0.1.13) |
 |-----------|---------------|--------|
-| **Axum** | `sa-token-plugin-axum` | Stable |
-| **Actix-web** | `sa-token-plugin-actix-web` | Stable |
-| **Poem** | `sa-token-plugin-poem` | Stable |
-| **Rocket** | `sa-token-plugin-rocket` | Stable |
-| **Warp** | `sa-token-plugin-warp` | Stable |
-| **Salvo** | `sa-token-plugin-salvo` | Stable |
-| **Tide** | `sa-token-plugin-tide` | Stable |
-| **Gotham** | `sa-token-plugin-gotham` | Stable |
-| **Ntex** | `sa-token-plugin-ntex` | Stable |
+| **Axum** | `sa-token-plugin-axum` | Default binding `axum-08` |
+| **Actix-web** | `sa-token-plugin-actix-web` | Façade; default **`v4`**; `v5` placeholder |
+| **Poem** | `sa-token-plugin-poem` | Default `poem-03` |
+| **Rocket** | `sa-token-plugin-rocket` | Façade; default **`v05`** |
+| **Warp** | `sa-token-plugin-warp` | Default `warp-03` |
+| **Salvo** | `sa-token-plugin-salvo` | Façade; default **`v079`** |
+| **Tide** | `sa-token-plugin-tide` | Default `tide-017` |
+| **Gotham** | `sa-token-plugin-gotham` | Façade; default **`v074`** |
+| **Ntex** | `sa-token-plugin-ntex` | Façade; default **`v212`** |
+
+Quick reference: [Quick Start](./quick-start.md).
 
 All plugins provide:
 - State management with Builder pattern
@@ -32,7 +34,7 @@ All plugins provide:
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.12"
+sa-token-plugin-axum = "0.1.13"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```

@@ -33,7 +33,7 @@ Add one dependency and you're ready:
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.12"
+sa-token-plugin-axum = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -68,10 +68,10 @@ async fn user_info(LoginIdExtractor(login_id): LoginIdExtractor) -> String {
 
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 
 # All backends
-sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 ```
 
 **Available plugins:** `sa-token-plugin-axum`, `sa-token-plugin-actix-web`, `sa-token-plugin-poem`, `sa-token-plugin-rocket`, `sa-token-plugin-warp`

@@ -205,8 +205,7 @@ impl StpUtil {
     /// let token = StpUtil::get_token_value()?;
     /// ```
     pub fn get_token_value() -> SaTokenResult<TokenValue> {
-        let ctx = SaTokenContext::get_current()
-            .ok_or(SaTokenError::NotLogin)?;
+        let ctx = SaTokenContext::try_current().ok_or(SaTokenError::NotLogin)?;
         ctx.token.ok_or(SaTokenError::NotLogin)
     }
     
@@ -294,8 +293,7 @@ impl StpUtil {
     /// println!("Token 创建时间: {:?}", token_info.create_time);
     /// ```
     pub fn get_token_info_current() -> SaTokenResult<Arc<TokenInfo>> {
-        let ctx = SaTokenContext::get_current()
-            .ok_or(SaTokenError::NotLogin)?;
+        let ctx = SaTokenContext::try_current().ok_or(SaTokenError::NotLogin)?;
         ctx.token_info.ok_or(SaTokenError::NotLogin)
     }
     
@@ -391,7 +389,7 @@ impl StpUtil {
         match manager.storage.get(&key).await {
             Ok(Some(tokens_str)) => {
                 let token_strings: Vec<String> = serde_json::from_str(&tokens_str)
-                    .map_err(|e| SaTokenError::SerializationError(e))?;
+                    .map_err(SaTokenError::SerializationError)?;
                 Ok(token_strings.into_iter().map(TokenValue::new).collect())
             }
             Ok(None) => Ok(Vec::new()),
@@ -763,7 +761,7 @@ impl StpUtil {
         // 保存更新后的 token 信息
         let key = format!("sa:token:{}", token.as_str());
         let value = serde_json::to_string(&token_info)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         let timeout = std::time::Duration::from_secs(timeout_seconds as u64);
         manager.storage.set(&key, &value, Some(timeout)).await
@@ -789,7 +787,7 @@ impl StpUtil {
         
         let key = format!("sa:token:{}", token.as_str());
         let value = serde_json::to_string(&token_info)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         manager.storage.set(&key, &value, manager.config.timeout_duration()).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
@@ -897,7 +895,7 @@ impl TokenBuilder {
         // 保存更新后的 token 信息
         let key = format!("sa:token:{}", token.as_str());
         let value = serde_json::to_string(&token_info)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         manager.storage.set(&key, &value, manager.config.timeout_duration()).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;

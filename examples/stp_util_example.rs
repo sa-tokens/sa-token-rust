@@ -144,9 +144,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - 额外数据 | Extra Data: {}", serde_json::to_string_pretty(&token_info3_retrieved.extra_data.unwrap_or(json!(null)))?);
     println!();
     
-    // 继续使用第一个 token 进行后续演示 | Continue with first token for subsequent demos
-    let token = token;
-    
     // ========================================
     // 步骤 3: 登录状态检查 | Step 3: Check Login Status
     // ========================================

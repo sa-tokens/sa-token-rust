@@ -9,33 +9,26 @@ homepage.workspace = true
 documentation.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Actix-web framework integration for sa-token-rust - All-in-one package"
+description = "Actix-web framework integration for sa-token-rust (facade over versioned bindings)"
 
 [dependencies]
-# 核心依赖（重新导出给用户）
-sa-token-core = { version = "0.1.12"}
-sa-token-adapter = { version = "0.1.12" }
-sa-token-macro = { version = "0.1.12" }
-
-# 存储实现（可选，通过 feature 控制）
-sa-token-storage-memory = { version = "0.1.12",  optional = true }
-sa-token-storage-redis = { version = "0.1.12", optional = true }
-sa-token-storage-database = { version = "0.1.12", optional = true }
-
-# Actix-web 框架依赖
-tokio = { workspace = true }
-async-trait = { workspace = true }
-actix-web = "4.11.0"
-serde = { workspace = true }
-serde_json = { workspace = true }
-urlencoding = { workspace = true }
-tracing = { workspace = true }
+sa-token-plugin-actix-web-v4 = { path = "../sa-token-plugin-actix-web-v4", optional = true }
+sa-token-plugin-actix-web-v5 = { path = "../sa-token-plugin-actix-web-v5", optional = true }
 
 [features]
-default = ["memory"]
-# 存储后端选择
-memory = ["sa-token-storage-memory"]
-redis = ["sa-token-storage-redis"]
-database = ["sa-token-storage-database"]
-# 包含所有存储后端
+default = ["v4", "memory"]
+v4 = ["dep:sa-token-plugin-actix-web-v4"]
+v5 = ["dep:sa-token-plugin-actix-web-v5"]
+memory = [
+    "sa-token-plugin-actix-web-v4?/memory",
+    "sa-token-plugin-actix-web-v5?/memory",
+]
+redis = [
+    "sa-token-plugin-actix-web-v4?/redis",
+    "sa-token-plugin-actix-web-v5?/redis",
+]
+database = [
+    "sa-token-plugin-actix-web-v4?/database",
+    "sa-token-plugin-actix-web-v5?/database",
+]
 full = ["memory", "redis", "database"]

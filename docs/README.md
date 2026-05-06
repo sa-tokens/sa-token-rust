@@ -8,12 +8,43 @@ Welcome to **sa-token-rust** documentation! All documentation is available in bo
 
 ---
 
+## 🚀 Quick Start
+
+Use **release 0.1.13**. Add exactly **one** `sa-token-plugin-*` crate for your web stack.
+
+| Kind | Crate | Default framework feature |
+|------|--------|---------------------------|
+| Integrated | `sa-token-plugin-axum` | `axum-08` (Axum 0.8) |
+| Integrated | `sa-token-plugin-warp` | `warp-03` |
+| Integrated | `sa-token-plugin-poem` | `poem-03` |
+| Integrated | `sa-token-plugin-tide` | `tide-017` |
+| Façade | `sa-token-plugin-actix-web` | `v4` + `memory`; `v5` is placeholder-only |
+| Façade | `sa-token-plugin-rocket` | `v05` + `memory` |
+| Façade | `sa-token-plugin-salvo` | `v079` + `memory` |
+| Façade | `sa-token-plugin-ntex` | `v212` + `memory` |
+| Façade | `sa-token-plugin-gotham` | `v074` + `memory` |
+
+**Rust import** (rename module to match your crate):
+
+```rust
+use sa_token_plugin_axum::*;          // Axum — or sa_token_plugin_actix_web, etc.
+```
+
+**Storage features** apply to every plugin: default `memory`, or add `redis`, `database`, or `full` as in [Simplified Usage](../README.md#-simplified-usage-recommended).
+
+**Path-based middleware** (`SaTokenLayer::with_path_auth`, etc.) ships for Actix v4, Axum, Poem, Tide, Salvo, Ntex. Rocket / Gotham / Warp layers authenticate globally (`SaTokenLayer::new`) — compose `PathAuthConfig` in handlers or macros where you need path rules ([Path Auth](../PATH_AUTH_GUIDE.md)).
+
+Complete walkthrough → [Main README — Quick Start](../README.md#-quick-start).
+
+---
+
 ## 📚 Documentation Index
 
 ### 🚀 Getting Started
 
 | Document | Description |
 |----------|-------------|
+| **Quick Start (this page)** | Framework table, façade vs integrated crates, 0.1.13 |
 | [Main README](../README.md) | Complete project overview and quick start |
 | [Simplified Usage](../README.md#-simplified-usage-recommended) | One-line import, all features included |
 | [Architecture Overview](../README.md#-architecture) | Project structure and design |
@@ -93,27 +124,32 @@ cargo run --example distributed_session_example
 
 ### 🔧 Framework Integration
 
-| Framework | Plugin Package | Status |
+| Framework | Plugin Package | Notes |
 |-----------|---------------|--------|
-| **Axum** | `sa-token-plugin-axum` | ✅ Stable |
-| **Actix-web** | `sa-token-plugin-actix-web` | ✅ Stable |
-| **Poem** | `sa-token-plugin-poem` | ✅ Stable |
-| **Rocket** | `sa-token-plugin-rocket` | ✅ Stable |
-| **Warp** | `sa-token-plugin-warp` | ✅ Stable |
+| **Axum** | `sa-token-plugin-axum` | Default binding `axum-08` |
+| **Actix-web** | `sa-token-plugin-actix-web` | Façade; default **`v4`** (Actix 4.x) |
+| **Poem** | `sa-token-plugin-poem` | Default `poem-03` |
+| **Rocket** | `sa-token-plugin-rocket` | Façade; default **`v05`** |
+| **Warp** | `sa-token-plugin-warp` | Default `warp-03` |
+| **Salvo** | `sa-token-plugin-salvo` | Façade; default **`v079`** |
+| **Tide** | `sa-token-plugin-tide` | Default `tide-017` |
+| **Gotham** | `sa-token-plugin-gotham` | Façade; default **`v074`** |
+| **Ntex** | `sa-token-plugin-ntex` | Façade; default **`v212`** |
 
-**Quick Start with Any Framework:**
+**Dependency examples (0.1.13):**
 
 ```toml
 [dependencies]
-# All-in-one package (choose your framework)
-sa-token-plugin-axum = "0.1.12"  # or actix-web, poem, rocket, warp
+sa-token-plugin-axum = "0.1.13"
+# sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+# sa-token-plugin-rocket = "0.1.13"
 ```
 
 ```rust
-use sa_token_plugin_axum::*;  // ✨ Everything included!
+use sa_token_plugin_axum::*;  // swap crate name per framework
 ```
 
-See [Main README - Simplified Usage](../README.md#-simplified-usage-recommended) for details.
+See the **Quick Start** section above and [Main README — Quick Start](../README.md#-quick-start) for façade vs integrated features.
 
 ---
 
@@ -170,7 +206,7 @@ See [Main README - Simplified Usage](../README.md#-simplified-usage-recommended)
 
 **Easy switch with features:**
 ```toml
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 ```
 
 ---

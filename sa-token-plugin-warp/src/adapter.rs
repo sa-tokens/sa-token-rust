@@ -3,8 +3,8 @@
 // 中文 | English
 // Warp 请求/响应适配器 | Warp request/response adapters
 
-use warp::http::{HeaderMap, Response, StatusCode};
-use warp::hyper::body::Bytes;
+use warp_03::http::{HeaderMap, Response, StatusCode};
+use warp_03::hyper::body::Bytes;
 use sa_token_adapter::{SaRequest, SaResponse, CookieOptions, build_cookie_string, utils};
 use serde::Serialize;
 
@@ -32,12 +32,11 @@ impl<'a> SaRequest for WarpRequestAdapter<'a> {
     
     fn get_cookie(&self, name: &str) -> Option<String> {
         // Warp 中 Cookie 通常从 Header 中解析 | In Warp, cookies are usually parsed from headers
-        if let Some(cookie_header) = self.headers.get("cookie") {
-            if let Ok(cookie_str) = cookie_header.to_str() {
+        if let Some(cookie_header) = self.headers.get("cookie")
+            && let Ok(cookie_str) = cookie_header.to_str() {
                 let cookies = utils::parse_cookies(cookie_str);
                 return cookies.get(name).map(|s| s.to_string());
             }
-        }
         None
     }
     

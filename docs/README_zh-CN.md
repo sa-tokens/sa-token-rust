@@ -8,12 +8,43 @@ English | [中文文档](./README_zh-CN.md)
 
 ---
 
+## 🚀 快速开始
+
+使用 **0.1.13** 版本。按你的 Web 框架只添加 **一个** `sa-token-plugin-*` 依赖。
+
+| 类型 | Crate | 默认框架 feature |
+|------|--------|------------------|
+| 一体化 | `sa-token-plugin-axum` | `axum-08`（Axum 0.8） |
+| 一体化 | `sa-token-plugin-warp` | `warp-03` |
+| 一体化 | `sa-token-plugin-poem` | `poem-03` |
+| 一体化 | `sa-token-plugin-tide` | `tide-017` |
+| 门面 | `sa-token-plugin-actix-web` | `v4` + `memory`；`v5` 仅为占位 |
+| 门面 | `sa-token-plugin-rocket` | `v05` + `memory` |
+| 门面 | `sa-token-plugin-salvo` | `v079` + `memory` |
+| 门面 | `sa-token-plugin-ntex` | `v212` + `memory` |
+| 门面 | `sa-token-plugin-gotham` | `v074` + `memory` |
+
+**Rust 导入**（按 crate 换模块名）：
+
+```rust
+use sa_token_plugin_axum::*;          // Axum — 或 sa_token_plugin_actix_web 等
+```
+
+**存储 feature** 对所有插件通用：默认 `memory`，可加 `redis`、`database` 或 `full`，见 [简化使用方式](../README_zh-CN.md#-简化使用方式推荐)。
+
+**路径鉴权中间件**（如 `SaTokenLayer::with_path_auth`）在 Actix v4、Axum、Poem、Tide、Salvo、Ntex 侧提供。**Rocket / Gotham / Warp** 的全局层为 `SaTokenLayer::new`；若要对路径分级控制，请在处理器或宏里组合 **`PathAuthConfig`**（参阅 [路径鉴权指南](./PATH_AUTH_GUIDE_zh-CN.md)）。
+
+完整步骤 → [主 README — 快速开始](../README_zh-CN.md#-快速开始)。
+
+---
+
 ## 📚 文档索引
 
 ### 🚀 入门指南
 
 | 文档 | 说明 |
 |----------|-------------|
+| **本页「快速开始」** | 框架对照表、门面与一体化 crate、0.1.13 |
 | [主 README](../README_zh-CN.md) | 完整的项目概述和快速开始 |
 | [简化使用方式](../README_zh-CN.md#-简化使用方式推荐) | 一行导入，包含所有功能 |
 | [架构概览](../README_zh-CN.md#-架构) | 项目结构和设计 |
@@ -93,27 +124,32 @@ cargo run --example distributed_session_example
 
 ### 🔧 框架集成
 
-| 框架 | 插件包 | 状态 |
+| 框架 | 插件包 | 说明 |
 |-----------|---------------|--------|
-| **Axum** | `sa-token-plugin-axum` | ✅ 稳定 |
-| **Actix-web** | `sa-token-plugin-actix-web` | ✅ 稳定 |
-| **Poem** | `sa-token-plugin-poem` | ✅ 稳定 |
-| **Rocket** | `sa-token-plugin-rocket` | ✅ 稳定 |
-| **Warp** | `sa-token-plugin-warp` | ✅ 稳定 |
+| **Axum** | `sa-token-plugin-axum` | 默认绑定 `axum-08` |
+| **Actix-web** | `sa-token-plugin-actix-web` | 门面；默认 **`v4`**（Actix 4.x） |
+| **Poem** | `sa-token-plugin-poem` | 默认 `poem-03` |
+| **Rocket** | `sa-token-plugin-rocket` | 门面；默认 **`v05`** |
+| **Warp** | `sa-token-plugin-warp` | 默认 `warp-03` |
+| **Salvo** | `sa-token-plugin-salvo` | 门面；默认 **`v079`** |
+| **Tide** | `sa-token-plugin-tide` | 默认 `tide-017` |
+| **Gotham** | `sa-token-plugin-gotham` | 门面；默认 **`v074`** |
+| **Ntex** | `sa-token-plugin-ntex` | 门面；默认 **`v212`** |
 
-**快速开始任意框架：**
+**依赖示例（0.1.13）：**
 
 ```toml
 [dependencies]
-# 一站式包（选择你的框架）
-sa-token-plugin-axum = "0.1.12"  # 或 actix-web, poem, rocket, warp
+sa-token-plugin-axum = "0.1.13"
+# sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+# sa-token-plugin-rocket = "0.1.13"
 ```
 
 ```rust
-use sa_token_plugin_axum::*;  // ✨ 包含所有功能！
+use sa_token_plugin_axum::*;  // 按框架替换 crate 名
 ```
 
-详见 [主 README - 简化使用方式](../README_zh-CN.md#-简化使用方式推荐)。
+请参阅本页上方的 **快速开始** 与 [主 README — 快速开始](../README_zh-CN.md#-快速开始)，了解门面与一体化 crate 的差异。
 
 ---
 
@@ -170,7 +206,7 @@ use sa_token_plugin_axum::*;  // ✨ 包含所有功能！
 
 **通过 features 轻松切换：**
 ```toml
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 ```
 
 ---

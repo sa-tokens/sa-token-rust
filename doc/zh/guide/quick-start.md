@@ -10,7 +10,7 @@
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.12"  # 默认：内存存储
+sa-token-plugin-axum = "0.1.13"  # 默认：内存存储
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -31,13 +31,13 @@ use sa_token_plugin_axum::*;  // 你需要的一切！
 
 ```toml
 # Redis 存储
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 
 # 多个存储后端
-sa-token-plugin-axum = { version = "0.1.12", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
 
 # 所有存储后端
-sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 ```
 
 **可用的 features：**
@@ -46,12 +46,30 @@ sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
 - `database`：数据库存储
 - `full`：所有存储后端
 
-**可用的插件：**
-- `sa-token-plugin-axum` - Axum 框架
-- `sa-token-plugin-actix-web` - Actix-web 框架
-- `sa-token-plugin-poem` - Poem 框架
-- `sa-token-plugin-rocket` - Rocket 框架
-- `sa-token-plugin-warp` - Warp 框架
+**可用的插件（0.1.13）：**
+- `sa-token-plugin-axum` — Axum（默认 `axum-08`）
+- `sa-token-plugin-actix-web` — Actix-web 门面（默认 `v4`；`v5` 仅占位）
+- `sa-token-plugin-poem` — Poem（默认 `poem-03`）
+- `sa-token-plugin-rocket` — Rocket 门面（默认 `v05`）
+- `sa-token-plugin-warp` — Warp（默认 `warp-03`）
+- `sa-token-plugin-salvo` — Salvo 门面（默认 `v079`）
+- `sa-token-plugin-tide` — Tide（默认 `tide-017`）
+- `sa-token-plugin-gotham` — Gotham 门面（默认 `v074`）
+- `sa-token-plugin-ntex` — Ntex 门面（默认 `v212`）
+
+**如何选择 crate**
+- **一体化（A 组）** — Axum、Warp、Poem、Tide：一个依赖，绑定 feature 默认开启。
+- **门面（B 组）** — Actix-web、Rocket、Salvo、Gotham、Ntex：一个依赖，默认选对应当前支持的大版本。生产环境 **勿** 单独依赖 Actix **`v5`**（HTTP 未接好）。
+
+**更多 `Cargo.toml` 示例**
+
+```toml
+sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-rocket = "0.1.13"
+sa-token-plugin-salvo = "0.1.13"
+```
+
+完整对照表见仓库根目录 [README.md](../../../README.md#-快速开始)。
 
 ---
 
@@ -61,9 +79,9 @@ sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.12"
-sa-token-storage-memory = "0.1.12"
-sa-token-plugin-axum = "0.1.12"
+sa-token-core = "0.1.13"
+sa-token-storage-memory = "0.1.13"
+sa-token-plugin-axum = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```

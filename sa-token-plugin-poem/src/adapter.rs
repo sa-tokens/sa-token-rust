@@ -3,8 +3,8 @@
 //! Poem 请求/响应适配器
 
 use std::collections::HashMap;
-use poem::{Request, Response, Body};
-use poem::http::{StatusCode, HeaderMap, HeaderName, HeaderValue};
+use poem_03::{Request, Response, Body};
+use poem_03::http::{StatusCode, HeaderMap, HeaderName, HeaderValue};
 use sa_token_adapter::context::{SaRequest, SaResponse, CookieOptions};
 use serde::Serialize;
 
@@ -97,11 +97,10 @@ impl Default for PoemResponseAdapter {
 
 impl SaResponse for PoemResponseAdapter {
     fn set_header(&mut self, name: &str, value: &str) {
-        if let Ok(header_name) = HeaderName::from_bytes(name.as_bytes()) {
-            if let Ok(header_value) = HeaderValue::from_str(value) {
+        if let Ok(header_name) = HeaderName::from_bytes(name.as_bytes())
+            && let Ok(header_value) = HeaderValue::from_str(value) {
                 self.headers.insert(header_name, header_value);
             }
-        }
     }
     
     fn set_cookie(&mut self, name: &str, value: &str, options: CookieOptions) {

@@ -66,6 +66,9 @@
 //! }
 //! ```
 
+#[cfg(not(feature = "warp-03"))]
+compile_error!("sa-token-plugin-warp: enable feature `warp-03` (default).");
+
 pub mod adapter;
 pub mod extractor;
 pub mod layer;
@@ -77,7 +80,10 @@ pub mod filter;
 // Warp 框架集成（本插件特有） | Warp framework integration (plugin specific)
 // ============================================================================
 pub use filter::{sa_token_filter, sa_check_login_filter};
-pub use layer::{sa_token_layer, sa_token_cleanup, sa_check_login, sa_check_permission, sa_check_role, extract_token_from_request};
+pub use layer::{
+    extract_token_from_request, sa_check_login, sa_check_permission, sa_check_role, sa_token_cleanup,
+    sa_token_layer, with_sa_token_scope,
+};
 pub use middleware::{with_auth, with_permission, with_role, require_auth, require_permission, require_role};
 pub use extractor::{SaTokenExtractor, OptionalSaTokenExtractor, LoginIdExtractor, AuthError, PermissionError, RoleError, handle_rejection};
 pub use adapter::{WarpRequestAdapter, WarpResponseAdapter};

@@ -18,6 +18,8 @@ Path-based authentication allows you to configure which routes require authentic
 
 ## Quick Start
 
+**Dependencies (0.1.13):** Actix-web needs the façade crate **`sa-token-plugin-actix-web`** (default **`v4`** + **`memory`**). Adjust storage with `redis` / `database` features as in the [main README](../README.md#-quick-start).
+
 ### Basic Usage
 
 ```rust
@@ -125,6 +127,8 @@ let config = PathAuthConfig::new()
 
 ## Framework Integration
 
+Built-in **`with_path_auth` helpers** are shown below for Actix-web, Axum, Poem, Salvo, and Tide. Rocket, Gotham, and Warp integrations currently expose **`SaTokenLayer::new` / Fairing-style** pipelines without path decorators — combine **`PathAuthConfig::need_auth`** or other `sa_token_core::router` helpers in your handlers, or rely on procedural macros (`#[sa_check_login]`, etc.) where appropriate.
+
 ### Actix-web
 
 ```rust
@@ -175,6 +179,20 @@ let config = PathAuthConfig::new()
 
 Router::new()
     .hoop(SaTokenLayer::with_path_auth(state, config))
+```
+
+### Ntex
+
+```rust
+use sa_token_plugin_ntex::{SaTokenLayer, PathAuthConfig};
+
+let config = PathAuthConfig::new()
+    .include(vec!["/api/**".to_string()])
+    .exclude(vec!["/api/public/**".to_string()]);
+
+App::new()
+    .wrap(SaTokenLayer::with_path_auth(state, config))
+    // ...routes
 ```
 
 ### Tide

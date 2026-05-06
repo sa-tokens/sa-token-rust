@@ -1,0 +1,46 @@
+[package]
+name = "sa-token-plugin-gotham-v074"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Gotham 0.7.x bindings for sa-token-rust"
+
+[dependencies]
+sa-token-plugin-gotham-core = { path = "../sa-token-plugin-gotham-core" }
+sa-token-core = { version = "0.1.13", path = "../sa-token-core" }
+sa-token-adapter = { version = "0.1.13", path = "../sa-token-adapter" }
+sa-token-macro = { version = "0.1.13", path = "../sa-token-macro" }
+
+sa-token-storage-memory = { version = "0.1.13", path = "../sa-token-storage-memory", optional = true }
+sa-token-storage-redis = { version = "0.1.13", path = "../sa-token-storage-redis", optional = true }
+sa-token-storage-database = { version = "0.1.13", path = "../sa-token-storage-database", optional = true }
+
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+http = { workspace = true }
+gotham = "0.7.4"
+gotham_derive = "0.7.1"
+hyper = "1.6.0"
+mime = "0.3.17"
+urlencoding = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+default = ["memory"]
+memory = [
+    "dep:sa-token-storage-memory",
+    "sa-token-plugin-gotham-core/memory",
+]
+redis = [
+    "dep:sa-token-storage-redis",
+    "sa-token-plugin-gotham-core/redis",
+]
+database = [
+    "dep:sa-token-storage-database",
+    "sa-token-plugin-gotham-core/database",
+]
+full = ["memory", "redis", "database"]

@@ -479,7 +479,7 @@ impl NonceManager {
             .map_err(|_| SaTokenError::InvalidNonceTimestamp)?;
 
         let nonce_time = DateTime::from_timestamp_millis(timestamp_ms)
-            .ok_or_else(|| SaTokenError::InvalidNonceTimestamp)?;
+            .ok_or(SaTokenError::InvalidNonceTimestamp)?;
 
         // Calculate time difference
         // 计算时间差

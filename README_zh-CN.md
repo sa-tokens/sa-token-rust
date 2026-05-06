@@ -81,6 +81,8 @@ sa-token-rust/
     └── StpUtil.md / StpUtil_zh-CN.md
 ```
 
+**多版本布局（0.1.13）** — Actix-web、Rocket、Salvo、Ntex、Gotham 以 **`sa-token-plugin-*` 门面 crate** 发布，通过 Cargo **`features`** 选择具体大版本（如 `v4`、`v05` …）。工作区内还有 **`sa-token-plugin-*-core`**（共享、与 HTTP 细节解耦的流程）和 **`sa-token-plugin-*-v*`**（各版本绑定）。Axum、Warp、Poem、Tide 仍为 **单 crate**，用 **绑定 feature**（`axum-08`、`warp-03` 等）对齐框架版本。
+
 ### 📊 架构讨论
 
 下面通过架构图来更直观地理解 sa-token-rust 的设计思路和组件关系：
@@ -152,6 +154,7 @@ sa-token-rust/
 - 请求/响应适配器
 - 从 Header/Cookie/Query 提取 Token
 - Bearer Token 支持
+- 在 `sa_token_core::router` 中共享的路径规则与认证流水线（如 `PathAuthConfig`、`run_auth_flow`），由各版本 layer / 中间件消费
 
 ## 🚀 快速开始
 
@@ -162,7 +165,7 @@ sa-token-rust/
 ```toml
 [dependencies]
 # 一站式包 - 包含核心、宏和存储
-sa-token-plugin-axum = "0.1.12"  # 默认：内存存储
+sa-token-plugin-axum = "0.1.13"  # 默认：内存存储
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -181,13 +184,13 @@ use sa_token_plugin_axum::*;  // ✨ 你需要的一切！
 **通过 features 选择存储后端：**
 ```toml
 # Redis 存储
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 
 # 多个存储后端
-sa-token-plugin-axum = { version = "0.1.12", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
 
 # 所有存储后端
-sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 ```
 
 **可用的 features：**
@@ -197,11 +200,40 @@ sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
 - `full`：所有存储后端
 
 **可用的插件：**
-- `sa-token-plugin-axum` - Axum 框架
-- `sa-token-plugin-actix-web` - Actix-web 框架
-- `sa-token-plugin-poem` - Poem 框架
-- `sa-token-plugin-rocket` - Rocket 框架
-- `sa-token-plugin-warp` - Warp 框架
+- `sa-token-plugin-axum` — Axum（默认 `axum-08`）
+- `sa-token-plugin-actix-web` — Actix-web 门面（默认 `v4`；`v5` 为占位）
+- `sa-token-plugin-poem` — Poem（默认 `poem-03`）
+- `sa-token-plugin-rocket` — Rocket 门面（默认 `v05`）
+- `sa-token-plugin-warp` — Warp（默认 `warp-03`）
+- `sa-token-plugin-salvo` — Salvo 门面（默认 `v079`）
+- `sa-token-plugin-tide` — Tide（默认 `tide-017`）
+- `sa-token-plugin-gotham` — Gotham 门面（默认 `v074`）
+- `sa-token-plugin-ntex` — Ntex 门面（默认 `v212`）
+
+**如何选择 crate**
+
+- **一体化插件（A 组）** — Axum、Warp、Poem、Tide：只需增加一个依赖；**框架绑定 feature** 默认开启（`axum-08`、`warp-03`、`poem-03`、`tide-017`）。存储仍用 **`memory` / `redis` / `database` / `full`**。
+- **门面插件（B 组）** — Actix-web、Rocket、Salvo、Gotham、Ntex：只依赖门面包；默认 feature 已选对应当前支持的大版本（如 `v4`+`memory`、`v05`+`memory` …）。存储类 feature 会透传到当前启用的绑定 crate。
+
+**Actix-web 5.x：** 单独启用 **`v5`** 仅用于向前兼容 — **尚未接入 HTTP 中间件**（`sa-token-plugin-actix-web-v5` 为占位）。线上请用 **`v4`**。
+
+**示例 `Cargo.toml`（按需替换插件名）：**
+
+```toml
+# Axum 0.8 + Redis
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+
+# Actix-web 4.x 门面（默认 v4 + memory）+ Redis
+sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+
+# Rocket 0.5 / Salvo / Ntex / Gotham — 默认已与当前支持线对齐
+sa-token-plugin-rocket = "0.1.13"
+sa-token-plugin-salvo = "0.1.13"
+sa-token-plugin-ntex = "0.1.13"
+sa-token-plugin-gotham = "0.1.13"
+```
+
+然后：`use sa_token_plugin_<下划线 crate 名>::*;`
 
 ---
 
@@ -211,9 +243,9 @@ sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.12"
-sa-token-storage-memory = "0.1.12"
-sa-token-plugin-axum = "0.1.12"
+sa-token-core = "0.1.13"
+sa-token-storage-memory = "0.1.13"
+sa-token-plugin-axum = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -248,7 +280,7 @@ async fn main() {
 **添加 Redis feature 到依赖：**
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 ```
 
 **使用简化导入：**

@@ -26,7 +26,7 @@
 //    - 支持所有标准 cookie 属性（Domain、Path、Max-Age、Secure、HttpOnly、SameSite）
 //
 // 4. Header 解析
-//    - extract_bearer_token(): 从 Authorization 头提取 Bearer token
+//    - strip_bearer_prefix() / extract_bearer_or_value(): Bearer 头解析
 //
 // 使用场景 | Use Cases:
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -156,29 +156,31 @@ pub fn build_cookie_string(name: &str, value: &str, options: CookieOptions) -> S
     cookie
 }
 
-/// 中文 | English
-/// 从 Authorization 头提取 Bearer token | Extract Bearer token from Authorization header
-///
-/// # 参数 | Parameters
-/// - `auth_header`: Authorization 头值，格式如 "Bearer <token>"
-///
-/// # 返回 | Returns
-/// - `Option<String>`: 提取的 token，如果格式不正确则返回 None
-///
-/// # 示例 | Example
-/// ```
-/// use sa_token_adapter::utils::extract_bearer_token;
-///
-/// let token = extract_bearer_token("Bearer abc123xyz");
-/// assert_eq!(token, Some("abc123xyz".to_string()));
-///
-/// let invalid = extract_bearer_token("Basic xyz");
-/// assert_eq!(invalid, None);
-/// ```
-pub fn extract_bearer_token(auth_header: &str) -> Option<String> {
+/// Strip a leading **`Bearer `** prefix only; return `None` if the string is not Bearer-shaped.
+/// 中文 | English：严格剥离 **`Bearer `** 前缀；非 Bearer 形式返回 **`None`**。
+pub fn strip_bearer_prefix(auth_header: &str) -> Option<String> {
     auth_header
         .strip_prefix("Bearer ")
         .map(|token| token.trim().to_string())
+}
+
+/// If `Bearer ` present, strip it; otherwise return **`s.trim()`** (same semantics as legacy per-plugin helpers).
+/// 若有 `Bearer ` 则剥离；否则返回 **`s.trim()`**（与历史上各 Web 插件本地 helper 语义一致）。
+pub fn extract_bearer_or_value(s: &str) -> String {
+    strip_bearer_prefix(s).unwrap_or_else(|| s.trim().to_string())
+}
+
+/// Alias of [`extract_bearer_or_value`] (alternate name in docs / migration plans).
+/// [`extract_bearer_or_value`] 的别名（文档 / 迁移 plan 用词）。
+#[inline]
+pub fn strip_bearer_or_passthrough(s: &str) -> String {
+    extract_bearer_or_value(s)
+}
+
+/// 兼容旧 API：语义同 [`strip_bearer_prefix`]。
+#[deprecated(since = "0.2.0", note = "use strip_bearer_prefix or extract_bearer_or_value")]
+pub fn extract_bearer_token(auth_header: &str) -> Option<String> {
+    strip_bearer_prefix(auth_header)
 }
 
 #[cfg(test)]
@@ -224,14 +226,24 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_bearer_token() {
+    fn test_strip_bearer_prefix() {
         assert_eq!(
-            extract_bearer_token("Bearer abc123xyz"),
+            strip_bearer_prefix("Bearer abc123xyz"),
             Some("abc123xyz".to_string())
         );
-        assert_eq!(extract_bearer_token("Bearer  token_with_spaces  "), Some("token_with_spaces".to_string()));
-        assert_eq!(extract_bearer_token("Basic xyz"), None);
-        assert_eq!(extract_bearer_token("Bearer"), None);
+        assert_eq!(
+            strip_bearer_prefix("Bearer  token_with_spaces  "),
+            Some("token_with_spaces".to_string())
+        );
+        assert_eq!(strip_bearer_prefix("Basic xyz"), None);
+        assert_eq!(strip_bearer_prefix("Bearer"), None);
+    }
+
+    #[test]
+    fn test_extract_bearer_or_value() {
+        assert_eq!(extract_bearer_or_value("Bearer abc"), "abc");
+        assert_eq!(extract_bearer_or_value("raw-token"), "raw-token");
+        assert_eq!(extract_bearer_or_value("  x  "), "x");
     }
 }
 

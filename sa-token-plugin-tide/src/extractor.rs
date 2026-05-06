@@ -1,4 +1,4 @@
-use tide::{Request, Response, StatusCode};
+use tide_017::{Request, Response, StatusCode};
 use sa_token_core::{token::TokenValue, error::messages};
 use serde_json::json;
 
@@ -31,6 +31,12 @@ impl AuthError {
         res.set_body(self.to_json());
         res.set_content_type("application/json");
         res
+    }
+}
+
+impl Default for AuthError {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

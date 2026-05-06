@@ -132,13 +132,13 @@ impl RefreshTokenManager {
         let value_str = self.storage.get(&key)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
-            .ok_or_else(|| SaTokenError::RefreshTokenNotFound)?;
+            .ok_or(SaTokenError::RefreshTokenNotFound)?;
 
         let value: serde_json::Value = serde_json::from_str(&value_str)
             .map_err(|_| SaTokenError::RefreshTokenInvalidData)?;
 
         let login_id = value["login_id"].as_str()
-            .ok_or_else(|| SaTokenError::RefreshTokenMissingLoginId)?
+            .ok_or(SaTokenError::RefreshTokenMissingLoginId)?
             .to_string();
 
         // Check expiration if set
@@ -178,7 +178,7 @@ impl RefreshTokenManager {
         let value_str = self.storage.get(&key)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
-            .ok_or_else(|| SaTokenError::RefreshTokenNotFound)?;
+            .ok_or(SaTokenError::RefreshTokenNotFound)?;
 
         let mut value: serde_json::Value = serde_json::from_str(&value_str)
             .map_err(|_| SaTokenError::RefreshTokenInvalidData)?;

@@ -4,7 +4,7 @@
 // Warp 提取器 | Warp extractors
 
 use sa_token_core::{token::TokenValue, error::messages};
-use warp::reject::Reject;
+use warp_03::reject::Reject;
 use serde_json::json;
 
 /// 中文 | English
@@ -32,6 +32,12 @@ impl AuthError {
             "code": 401,
             "message": self.message()
         }).to_string()
+    }
+}
+
+impl Default for AuthError {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -65,6 +71,12 @@ impl PermissionError {
     }
 }
 
+impl Default for PermissionError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Reject for PermissionError {}
 
 /// 中文 | English
@@ -92,6 +104,12 @@ impl RoleError {
             "code": 403,
             "message": self.message()
         }).to_string()
+    }
+}
+
+impl Default for RoleError {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -137,7 +155,7 @@ impl LoginIdExtractor {
 /// 处理 Warp 拒绝 | Handle Warp rejection
 ///
 /// 将 Sa-Token 错误转换为 HTTP 响应 | Convert Sa-Token errors to HTTP responses
-pub async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std::convert::Infallible> {
+pub async fn handle_rejection(err: warp_03::Rejection) -> Result<impl warp_03::Reply, std::convert::Infallible> {
     let (code, message) = if err.is_not_found() {
         (404, json!({"code": 404, "message": "Not Found"}).to_string())
     } else if let Some(auth_error) = err.find::<AuthError>() {
@@ -150,8 +168,8 @@ pub async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, 
         (500, json!({"code": 500, "message": "Internal Server Error"}).to_string())
     };
     
-    Ok(warp::reply::with_status(
-        warp::reply::json(&serde_json::from_str::<serde_json::Value>(&message).unwrap_or_default()),
-        warp::http::StatusCode::from_u16(code).unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR)
+    Ok(warp_03::reply::with_status(
+        warp_03::reply::json(&serde_json::from_str::<serde_json::Value>(&message).unwrap_or_default()),
+        warp_03::http::StatusCode::from_u16(code).unwrap_or(warp_03::http::StatusCode::INTERNAL_SERVER_ERROR)
     ))
 }

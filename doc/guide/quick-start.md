@@ -10,7 +10,7 @@ Add a single dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.12"  # Default: memory storage
+sa-token-plugin-axum = "0.1.13"  # Default: memory storage
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -31,13 +31,13 @@ use sa_token_plugin_axum::*;  // Everything you need!
 
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 
 # Multiple storage backends
-sa-token-plugin-axum = { version = "0.1.12", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
 
 # All storage backends
-sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 ```
 
 **Available features:**
@@ -46,12 +46,30 @@ sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
 - `database`: Database storage
 - `full`: All storage backends
 
-**Available plugins:**
-- `sa-token-plugin-axum` - Axum framework
-- `sa-token-plugin-actix-web` - Actix-web framework
-- `sa-token-plugin-poem` - Poem framework
-- `sa-token-plugin-rocket` - Rocket framework
-- `sa-token-plugin-warp` - Warp framework
+**Available plugins (0.1.13):**
+- `sa-token-plugin-axum` — Axum (`axum-08` default)
+- `sa-token-plugin-actix-web` — Actix-web façade (`v4` default; `v5` placeholder-only)
+- `sa-token-plugin-poem` — Poem (`poem-03` default)
+- `sa-token-plugin-rocket` — Rocket façade (`v05` default)
+- `sa-token-plugin-warp` — Warp (`warp-03` default)
+- `sa-token-plugin-salvo` — Salvo façade (`v079` default)
+- `sa-token-plugin-tide` — Tide (`tide-017` default)
+- `sa-token-plugin-gotham` — Gotham façade (`v074` default)
+- `sa-token-plugin-ntex` — Ntex façade (`v212` default)
+
+**Choosing a crate**
+- **Integrated (Group A)** — Axum, Warp, Poem, Tide: one dependency; binding feature is enabled by default.
+- **Façade (Group B)** — Actix-web, Rocket, Salvo, Gotham, Ntex: one dependency; defaults select the supported major (`v4`, `v05`, …). Do **not** use Actix **`v5`** for production HTTP yet.
+
+**More `Cargo.toml` examples**
+
+```toml
+sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-rocket = "0.1.13"
+sa-token-plugin-salvo = "0.1.13"
+```
+
+Full framework matrix: [README.md](../../README.md#-quick-start) in the repository root.
 
 ---
 
@@ -61,9 +79,9 @@ If you prefer fine-grained control:
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.12"
-sa-token-storage-memory = "0.1.12"
-sa-token-plugin-axum = "0.1.12"
+sa-token-core = "0.1.13"
+sa-token-storage-memory = "0.1.13"
+sa-token-plugin-axum = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```

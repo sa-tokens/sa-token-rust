@@ -43,8 +43,10 @@ use crate::error::{SaTokenError, SaTokenResult};
 
 /// JWT Algorithm | JWT 算法
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum JwtAlgorithm {
     /// HMAC using SHA-256 | 使用 SHA-256 的 HMAC
+    #[default]
     HS256,
     /// HMAC using SHA-384 | 使用 SHA-384 的 HMAC
     HS384,
@@ -62,11 +64,6 @@ pub enum JwtAlgorithm {
     ES384,
 }
 
-impl Default for JwtAlgorithm {
-    fn default() -> Self {
-        Self::HS256
-    }
-}
 
 impl From<JwtAlgorithm> for Algorithm {
     fn from(alg: JwtAlgorithm) -> Self {

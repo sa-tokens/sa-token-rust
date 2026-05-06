@@ -12,7 +12,7 @@ categories.workspace = true
 description = "In-memory storage implementation for sa-token-rust"
 
 [dependencies]
-sa-token-adapter = { version = "0.1.12", path = "../sa-token-adapter" }
+sa-token-adapter = { version = "0.1.13", path = "../sa-token-adapter" }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }

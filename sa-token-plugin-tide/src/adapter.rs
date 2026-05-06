@@ -3,7 +3,7 @@
 // 中文 | English
 // Tide 请求/响应适配器 | Tide request/response adapter
 
-use tide::{Request, Response, StatusCode};
+use tide_017::{Request, Response, StatusCode};
 use sa_token_adapter::{SaRequest, SaResponse, CookieOptions, build_cookie_string};
 use serde::Serialize;
 
@@ -35,14 +35,13 @@ impl<'a, State> SaRequest for TideRequestAdapter<'a, State> {
         }
         
         // 如果没有找到，手动解析 Cookie 头 | If not found, manually parse Cookie header
-        if let Some(cookie_header) = self.request.header("cookie") {
-            if let Some(cookie_str) = cookie_header.get(0) {
+        if let Some(cookie_header) = self.request.header("cookie")
+            && let Some(cookie_str) = cookie_header.get(0) {
                 let cookies = sa_token_adapter::utils::parse_cookies(cookie_str.as_str());
                 if let Some(value) = cookies.get(name) {
                     return Some(value.to_string());
                 }
             }
-        }
         
         None
     }

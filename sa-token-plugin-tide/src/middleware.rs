@@ -3,12 +3,12 @@
 // 中文 | English
 // Tide 认证中间件 | Tide authentication middleware
 
-use tide::{Middleware, Request, Response, Next, StatusCode};
-use sa_token_core::{StpUtil, error::messages, SaTokenContext, token::TokenValue};
+use tide_017::{Middleware, Request, Response, Next, StatusCode};
+use sa_token_core::{StpUtil, error::messages};
+use sa_token_core::router::run_auth_flow;
 use async_trait::async_trait;
 use crate::state::SaTokenState;
-use crate::layer::extract_token_from_request;
-use std::sync::Arc;
+use crate::layer::TideRequestAdapter;
 use serde_json::json;
 
 /// 中文 | English
@@ -16,10 +16,10 @@ use serde_json::json;
 ///
 /// # 示例 | Example
 /// ```rust,ignore
-/// use tide::prelude::*;
+/// use tide_017::prelude::*;
 /// use sa_token_plugin_tide::AuthMiddleware;
 ///
-/// let mut app = tide::new();
+/// let mut app = tide_017::new();
 /// app.with(AuthMiddleware);
 /// app.at("/user").get(user_handler);
 /// ```
@@ -28,7 +28,7 @@ pub struct AuthMiddleware;
 
 #[async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for AuthMiddleware {
-    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide::Result {
+    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide_017::Result {
         // 中文 | English
         // 从请求头中获取 token | Get token from request headers
         let token = req
@@ -65,7 +65,7 @@ impl<State: Clone + Send + Sync + 'static> Middleware<State> for AuthMiddleware 
 ///
 /// # 示例 | Example
 /// ```rust,ignore
-/// let mut app = tide::new();
+/// let mut app = tide_017::new();
 /// app.with(PermissionMiddleware::new("user:read"));
 /// ```
 #[derive(Clone)]
@@ -85,7 +85,7 @@ impl PermissionMiddleware {
 
 #[async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for PermissionMiddleware {
-    async fn handle(&self, req: Request<State>, next: Next<'_, State>) -> tide::Result {
+    async fn handle(&self, req: Request<State>, next: Next<'_, State>) -> tide_017::Result {
         // 中文 | English
         // 从扩展数据获取 login_id | Get login_id from extensions
         if let Some(login_id) = req.ext::<String>() {
@@ -124,39 +124,28 @@ impl SaCheckLoginMiddleware {
 
 #[async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for SaCheckLoginMiddleware {
-    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide::Result {
-        let mut ctx = SaTokenContext::new();
-        
-        if let Some(token_str) = extract_token_from_request(&req, &self.state.manager.config.token_name) {
-            tracing::debug!("Sa-Token(login-check): extracted token from request: {}", token_str);
-            let token = TokenValue::new(token_str);
-            
-            if self.state.manager.is_valid(&token).await {
-                if let Ok(token_info) = self.state.manager.get_token_info(&token).await {
-                    let login_id = token_info.login_id.clone();
-                    req.set_ext(token.clone());
-                    req.set_ext(login_id.clone());
-                    
-                    ctx.token = Some(token.clone());
-                    ctx.token_info = Some(Arc::new(token_info));
-                    ctx.login_id = Some(login_id);
-                    
-                    SaTokenContext::set_current(ctx);
-                    let result = next.run(req).await;
-                    SaTokenContext::clear();
-                    return Ok(result);
-                }
-            }
+    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide_017::Result {
+        let adapter = TideRequestAdapter::new(&req);
+        let flow = run_auth_flow(&adapter, &self.state.manager, None).await;
+
+        if flow.token.is_none() || flow.login_id.is_none() {
+            let mut res = Response::new(StatusCode::Unauthorized);
+            res.set_body(json!({
+                "code": 401,
+                "message": messages::AUTH_ERROR
+            }).to_string());
+            res.set_content_type("application/json");
+            return Ok(res);
         }
-        
-        // 未登录，返回401错误
-        let mut res = Response::new(StatusCode::Unauthorized);
-        res.set_body(json!({
-            "code": 401,
-            "message": messages::AUTH_ERROR
-        }).to_string());
-        res.set_content_type("application/json");
-        Ok(res)
+
+        if let Some(t) = &flow.token {
+            req.set_ext(t.clone());
+        }
+        if let Some(id) = &flow.login_id {
+            req.set_ext(id.clone());
+        }
+
+        Ok(flow.run(next.run(req)).await)
     }
 }
 
@@ -180,43 +169,36 @@ impl SaCheckPermissionMiddleware {
 
 #[async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for SaCheckPermissionMiddleware {
-    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide::Result {
-        let mut ctx = SaTokenContext::new();
-        
-        if let Some(token_str) = extract_token_from_request(&req, &self.state.manager.config.token_name) {
-            tracing::debug!("Sa-Token(permission-check): extracted token from request: {}", token_str);
-            let token = TokenValue::new(token_str);
-            
-            if self.state.manager.is_valid(&token).await {
-                if let Ok(token_info) = self.state.manager.get_token_info(&token).await {
-                    let login_id = token_info.login_id.clone();
-                    
-                    // 检查权限
-                    if StpUtil::has_permission(&login_id, &self.permission).await {
-                        req.set_ext(token.clone());
-                        req.set_ext(login_id.clone());
-                        
-                        ctx.token = Some(token.clone());
-                        ctx.token_info = Some(Arc::new(token_info));
-                        ctx.login_id = Some(login_id);
-                        
-                        SaTokenContext::set_current(ctx);
-                        let result = next.run(req).await;
-                        SaTokenContext::clear();
-                        return Ok(result);
-                    }
-                }
-            }
+    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide_017::Result {
+        let adapter = TideRequestAdapter::new(&req);
+        let flow = run_auth_flow(&adapter, &self.state.manager, None).await;
+
+        let Some(login_id) = flow.login_id.clone() else {
+            let mut res = Response::new(StatusCode::Forbidden);
+            res.set_body(json!({
+                "code": 403,
+                "message": messages::PERMISSION_REQUIRED
+            }).to_string());
+            res.set_content_type("application/json");
+            return Ok(res);
+        };
+
+        if !StpUtil::has_permission(&login_id, &self.permission).await {
+            let mut res = Response::new(StatusCode::Forbidden);
+            res.set_body(json!({
+                "code": 403,
+                "message": messages::PERMISSION_REQUIRED
+            }).to_string());
+            res.set_content_type("application/json");
+            return Ok(res);
         }
-        
-        // 无权限，返回403错误
-        let mut res = Response::new(StatusCode::Forbidden);
-        res.set_body(json!({
-            "code": 403,
-            "message": messages::PERMISSION_REQUIRED
-        }).to_string());
-        res.set_content_type("application/json");
-        Ok(res)
+
+        if let Some(t) = &flow.token {
+            req.set_ext(t.clone());
+        }
+        req.set_ext(login_id);
+
+        Ok(flow.run(next.run(req)).await)
     }
 }
 
@@ -240,42 +222,35 @@ impl SaCheckRoleMiddleware {
 
 #[async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for SaCheckRoleMiddleware {
-    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide::Result {
-        let mut ctx = SaTokenContext::new();
-        
-        if let Some(token_str) = extract_token_from_request(&req, &self.state.manager.config.token_name) {
-            tracing::debug!("Sa-Token(role-check): extracted token from request: {}", token_str);
-            let token = TokenValue::new(token_str);
-            
-            if self.state.manager.is_valid(&token).await {
-                if let Ok(token_info) = self.state.manager.get_token_info(&token).await {
-                    let login_id = token_info.login_id.clone();
-                    
-                    // 检查角色
-                    if StpUtil::has_role(&login_id, &self.role).await {
-                        req.set_ext(token.clone());
-                        req.set_ext(login_id.clone());
-                        
-                        ctx.token = Some(token.clone());
-                        ctx.token_info = Some(Arc::new(token_info));
-                        ctx.login_id = Some(login_id);
-                        
-                        SaTokenContext::set_current(ctx);
-                        let result = next.run(req).await;
-                        SaTokenContext::clear();
-                        return Ok(result);
-                    }
-                }
-            }
+    async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide_017::Result {
+        let adapter = TideRequestAdapter::new(&req);
+        let flow = run_auth_flow(&adapter, &self.state.manager, None).await;
+
+        let Some(login_id) = flow.login_id.clone() else {
+            let mut res = Response::new(StatusCode::Forbidden);
+            res.set_body(json!({
+                "code": 403,
+                "message": messages::ROLE_REQUIRED
+            }).to_string());
+            res.set_content_type("application/json");
+            return Ok(res);
+        };
+
+        if !StpUtil::has_role(&login_id, &self.role).await {
+            let mut res = Response::new(StatusCode::Forbidden);
+            res.set_body(json!({
+                "code": 403,
+                "message": messages::ROLE_REQUIRED
+            }).to_string());
+            res.set_content_type("application/json");
+            return Ok(res);
         }
-        
-        // 无角色权限，返回403错误
-        let mut res = Response::new(StatusCode::Forbidden);
-        res.set_body(json!({
-            "code": 403,
-            "message": messages::ROLE_REQUIRED
-        }).to_string());
-        res.set_content_type("application/json");
-        Ok(res)
+
+        if let Some(t) = &flow.token {
+            req.set_ext(t.clone());
+        }
+        req.set_ext(login_id);
+
+        Ok(flow.run(next.run(req)).await)
     }
 }

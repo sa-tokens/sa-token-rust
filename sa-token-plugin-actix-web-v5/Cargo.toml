@@ -1,0 +1,21 @@
+[package]
+name = "sa-token-plugin-actix-web-v5"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Placeholder for future actix-web 5.x bindings"
+
+[dependencies]
+sa-token-plugin-actix-web-core = { path = "../sa-token-plugin-actix-web-core" }
+
+sa-token-storage-memory = { version = "0.1.13", path = "../sa-token-storage-memory", optional = true }
+sa-token-storage-redis = { version = "0.1.13", path = "../sa-token-storage-redis", optional = true }
+sa-token-storage-database = { version = "0.1.13", path = "../sa-token-storage-database", optional = true }
+
+[features]
+default = []
+memory = ["dep:sa-token-storage-memory", "sa-token-plugin-actix-web-core/memory"]
+redis = ["dep:sa-token-storage-redis", "sa-token-plugin-actix-web-core/redis"]
+database = ["dep:sa-token-storage-database", "sa-token-plugin-actix-web-core/database"]

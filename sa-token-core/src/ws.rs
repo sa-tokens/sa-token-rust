@@ -295,11 +295,10 @@ impl WsAuthManager {
         
         // Step 3: Validate token expiration
         // 步骤 3: 验证 Token 过期时间
-        if let Some(expire_time) = token_info.expire_time {
-            if chrono::Utc::now() > expire_time {
+        if let Some(expire_time) = token_info.expire_time
+            && chrono::Utc::now() > expire_time {
                 return Err(SaTokenError::TokenExpired);
             }
-        }
 
         // Step 4: Generate unique WebSocket session ID
         // 步骤 4: 生成唯一的 WebSocket 会话 ID
@@ -347,11 +346,10 @@ impl WsAuthManager {
         let token_info = self.manager.get_token_info(&token_value).await?;
         
         // Validate expiration | 验证过期时间
-        if let Some(expire_time) = token_info.expire_time {
-            if chrono::Utc::now() > expire_time {
+        if let Some(expire_time) = token_info.expire_time
+            && chrono::Utc::now() > expire_time {
                 return Err(SaTokenError::TokenExpired);
             }
-        }
 
         Ok(token_info.login_id)
     }

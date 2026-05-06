@@ -13,7 +13,7 @@ Axum framework integration for sa-token-rust.
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -66,7 +66,7 @@ let state = SaTokenState::builder()
 
 ## Version History
 
-### 0.1.12
+### 0.1.13
 - ✨ Added path-based authentication support for fine-grained access control
 - 🔧 Optimized middleware implementation, reduced code duplication
 

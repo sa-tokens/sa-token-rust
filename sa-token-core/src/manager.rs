@@ -189,11 +189,10 @@ impl SaTokenManager {
         
         // 如果过期时间为 None，使用配置的过期时间
         let now = Utc::now();
-        if token_info.expire_time.is_none() {
-            if let Some(timeout) = self.config.timeout_duration() {
+        if token_info.expire_time.is_none()
+            && let Some(timeout) = self.config.timeout_duration() {
                 token_info.expire_time = Some(now + Duration::from_std(timeout).unwrap());
             }
-        }
         
         // 确保登录类型不为空
         if token_info.login_type.is_empty() {
@@ -203,7 +202,7 @@ impl SaTokenManager {
         // 存储 token 信息
         let key = format!("sa:token:{}", token.as_str());
         let value = serde_json::to_string(&token_info)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         self.storage.set(&key, &value, self.config.timeout_duration()).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
@@ -313,7 +312,7 @@ impl SaTokenManager {
             .ok_or(SaTokenError::TokenNotFound)?;
         
         let token_info: TokenInfo = serde_json::from_str(&value)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         // 检查是否过期
         if token_info.is_expired() {
@@ -351,7 +350,7 @@ impl SaTokenManager {
         
         if let Some(value) = value {
             let session: SaSession = serde_json::from_str(&value)
-                .map_err(|e| SaTokenError::SerializationError(e))?;
+                .map_err(SaTokenError::SerializationError)?;
             Ok(session)
         } else {
             Ok(SaSession::new(login_id))
@@ -362,7 +361,7 @@ impl SaTokenManager {
     pub async fn save_session(&self, session: &SaSession) -> SaTokenResult<()> {
         let key = format!("sa:session:{}", session.id);
         let value = serde_json::to_string(session)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         self.storage.set(&key, &value, None).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
@@ -405,7 +404,7 @@ impl SaTokenManager {
         // 保存更新后的 token 信息
         let key = format!("sa:token:{}", token.as_str());
         let value = serde_json::to_string(&new_token_info)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         let timeout = std::time::Duration::from_secs(timeout_seconds as u64);
         self.storage.set(&key, &value, Some(timeout)).await

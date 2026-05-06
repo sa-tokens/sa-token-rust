@@ -27,7 +27,7 @@
 //! use sa_token_plugin_tide::*;
 //! 
 //! #[async_std::main]
-//! async fn main() -> tide::Result<()> {
+//! async fn main() -> tide_017::Result<()> {
 //!     let storage = Arc::new(MemoryStorage::new());
 //!     
 //!     // 创建 Sa-Token 状态 | Create Sa-Token state
@@ -37,7 +37,7 @@
 //!         .storage(storage)
 //!         .build();
 //!     
-//!     let mut app = tide::new();
+//!     let mut app = tide_017::new();
 //!     
 //!     // 公共路由 | Public routes
 //!     app.at("/login").post(login_handler);
@@ -56,6 +56,9 @@
 //!     Ok(())
 //! }
 //! ```
+
+#[cfg(not(feature = "tide-017"))]
+compile_error!("sa-token-plugin-tide: enable feature `tide-017` (default).");
 
 pub mod adapter;
 pub mod extractor;

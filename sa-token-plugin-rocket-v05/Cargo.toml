@@ -1,0 +1,42 @@
+[package]
+name = "sa-token-plugin-rocket-v05"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Rocket 0.5.x bindings for sa-token-rust"
+
+[dependencies]
+sa-token-plugin-rocket-core = { path = "../sa-token-plugin-rocket-core" }
+sa-token-core = { version = "0.1.13", path = "../sa-token-core" }
+sa-token-adapter = { version = "0.1.13", path = "../sa-token-adapter" }
+sa-token-macro = { version = "0.1.13", path = "../sa-token-macro" }
+
+sa-token-storage-memory = { version = "0.1.13", path = "../sa-token-storage-memory", optional = true }
+sa-token-storage-redis = { version = "0.1.13", path = "../sa-token-storage-redis", optional = true }
+sa-token-storage-database = { version = "0.1.13", path = "../sa-token-storage-database", optional = true }
+
+rocket = "0.5.1"
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+urlencoding = "2.1.3"
+tracing = { workspace = true }
+
+[features]
+default = ["memory"]
+memory = [
+    "dep:sa-token-storage-memory",
+    "sa-token-plugin-rocket-core/memory",
+]
+redis = [
+    "dep:sa-token-storage-redis",
+    "sa-token-plugin-rocket-core/redis",
+]
+database = [
+    "dep:sa-token-storage-database",
+    "sa-token-plugin-rocket-core/database",
+]
+full = ["memory", "redis", "database"]

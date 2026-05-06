@@ -19,7 +19,7 @@
 //! 
 //! ```rust,ignore
 //! use std::sync::Arc;
-//! use poem::{Route, Server, listener::TcpListener, handler};
+//! use poem_03::{Route, Server, listener::TcpListener, handler};
 //! use sa_token_plugin_poem::*;  // 一次性导入所有功能
 //! 
 //! #[handler]
@@ -37,7 +37,7 @@
 //!     
 //!     // 2. 创建路由
 //!     let app = Route::new()
-//!         .at("/api/user/info", poem::get(user_info))
+//!         .at("/api/user/info", poem_03::get(user_info))
 //!         .with(SaTokenMiddleware::new(sa_token_state.manager.clone()))
 //!         .data(sa_token_state);
 //!     
@@ -53,6 +53,9 @@
 //!         .await
 //! }
 //! ```
+
+#[cfg(not(feature = "poem-03"))]
+compile_error!("sa-token-plugin-poem: enable feature `poem-03` (default).");
 
 pub mod adapter;
 pub mod middleware;

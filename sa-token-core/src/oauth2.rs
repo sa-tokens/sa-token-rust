@@ -376,7 +376,7 @@ impl OAuth2Manager {
     pub async fn register_client(&self, client: &OAuth2Client) -> SaTokenResult<()> {
         let key = format!("oauth2:client:{}", client.client_id);
         let value = serde_json::to_string(client)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         self.storage.set(&key, &value, None).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
@@ -396,10 +396,10 @@ impl OAuth2Manager {
         let key = format!("oauth2:client:{}", client_id);
         let value = self.storage.get(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
-            .ok_or_else(|| SaTokenError::OAuth2ClientNotFound)?;
+            .ok_or(SaTokenError::OAuth2ClientNotFound)?;
         
         serde_json::from_str(&value)
-            .map_err(|e| SaTokenError::SerializationError(e))
+            .map_err(SaTokenError::SerializationError)
     }
 
     /// Verify client credentials | 验证客户端凭据
@@ -471,7 +471,7 @@ impl OAuth2Manager {
     pub async fn store_authorization_code(&self, auth_code: &AuthorizationCode) -> SaTokenResult<()> {
         let key = format!("oauth2:code:{}", auth_code.code);
         let value = serde_json::to_string(auth_code)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         let ttl = Some(std::time::Duration::from_secs(self.code_ttl as u64));
         self.storage.set(&key, &value, ttl).await
@@ -500,10 +500,10 @@ impl OAuth2Manager {
         let key = format!("oauth2:code:{}", code);
         let value = self.storage.get(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
-            .ok_or_else(|| SaTokenError::OAuth2CodeNotFound)?;
+            .ok_or(SaTokenError::OAuth2CodeNotFound)?;
         
         let auth_code: AuthorizationCode = serde_json::from_str(&value)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         // Check expiration and auto-cleanup if expired
         if Utc::now() > auth_code.expires_at {
@@ -642,7 +642,7 @@ impl OAuth2Manager {
         // Store access token with TTL
         let key = format!("oauth2:token:{}", access_token);
         let value = serde_json::to_string(&token_info)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         let ttl = Some(std::time::Duration::from_secs(self.token_ttl as u64));
         self.storage.set(&key, &value, ttl).await
@@ -690,10 +690,10 @@ impl OAuth2Manager {
         let key = format!("oauth2:token:{}", access_token);
         let value = self.storage.get(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
-            .ok_or_else(|| SaTokenError::OAuth2AccessTokenNotFound)?;
+            .ok_or(SaTokenError::OAuth2AccessTokenNotFound)?;
         
         let token_info: OAuth2TokenInfo = serde_json::from_str(&value)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         // Check expiration and auto-cleanup if expired
         if Utc::now() > token_info.expires_at {
@@ -739,14 +739,14 @@ impl OAuth2Manager {
         let key = format!("oauth2:refresh:{}", refresh_token);
         let value = self.storage.get(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
-            .ok_or_else(|| SaTokenError::OAuth2RefreshTokenNotFound)?;
+            .ok_or(SaTokenError::OAuth2RefreshTokenNotFound)?;
         
         let data: serde_json::Value = serde_json::from_str(&value)
-            .map_err(|e| SaTokenError::SerializationError(e))?;
+            .map_err(SaTokenError::SerializationError)?;
         
         // 3. Validate client ID matches
         let stored_client_id = data["client_id"].as_str()
-            .ok_or_else(|| SaTokenError::OAuth2InvalidRefreshToken)?;
+            .ok_or(SaTokenError::OAuth2InvalidRefreshToken)?;
         
         if stored_client_id != client_id {
             return Err(SaTokenError::OAuth2ClientIdMismatch);
@@ -754,10 +754,10 @@ impl OAuth2Manager {
 
         // 4. Extract user ID and scope
         let user_id = data["user_id"].as_str()
-            .ok_or_else(|| SaTokenError::OAuth2InvalidRefreshToken)?;
+            .ok_or(SaTokenError::OAuth2InvalidRefreshToken)?;
         
         let scope: Vec<String> = data["scope"].as_array()
-            .ok_or_else(|| SaTokenError::OAuth2InvalidScope)?
+            .ok_or(SaTokenError::OAuth2InvalidScope)?
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect();

@@ -18,6 +18,8 @@
 
 ## 快速开始
 
+**依赖（0.1.13）：** Actix-web 使用门面 crate **`sa-token-plugin-actix-web`**（默认 **`v4`** + **`memory`**）。存储切换方式见 [主 README](../README_zh-CN.md#-快速开始)。
+
 ### 基本用法
 
 ```rust
@@ -125,6 +127,8 @@ let config = PathAuthConfig::new()
 
 ## 框架集成
 
+下文展示了 Actix-web、Axum、Poem、Salvo、Tide 中内置的 **`with_path_auth`**。**Rocket / Gotham / Warp** 当前主要提供 **`SaTokenLayer::new`** 等形式的全局流水线，路径规则需在处理器中组合 **`PathAuthConfig::need_auth`** 等 `sa_token_core::router` 工具，或通过过程宏（如 `#[sa_check_login]`）控制。
+
 ### Actix-web
 
 ```rust
@@ -175,6 +179,20 @@ let config = PathAuthConfig::new()
 
 Router::new()
     .hoop(SaTokenLayer::with_path_auth(state, config))
+```
+
+### Ntex
+
+```rust
+use sa_token_plugin_ntex::{SaTokenLayer, PathAuthConfig};
+
+let config = PathAuthConfig::new()
+    .include(vec!["/api/**".to_string()])
+    .exclude(vec!["/api/public/**".to_string()]);
+
+App::new()
+    .wrap(SaTokenLayer::with_path_auth(state, config))
+    // ...路由
 ```
 
 ### Tide

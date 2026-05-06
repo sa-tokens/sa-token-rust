@@ -15,7 +15,7 @@
 
 ## ✨ 特性
 
-- 🚀 **多框架支持**: Axum, Actix-web, Poem, Rocket, Warp, Salvo, Tide, Gotham, Ntex
+- 🚀 **多框架支持**: Axum, Actix-web, Poem, Rocket, Warp, Salvo, Tide, Gotham, Ntex（部分框架以 **门面 crate + feature** 固定大版本，参见 [主 README 快速开始](../README_zh-CN.md#-快速开始)）
 - 🔐 **完整的认证**: 登录、登出、Token 验证、Session 管理
 - 🛡️ **细粒度授权**: 基于权限和角色的访问控制
 - 💾 **灵活存储**: 内存、Redis 和数据库存储后端
@@ -41,9 +41,14 @@ sa-token-rust/
 ├── sa-token-storage-memory/    # 内存存储实现
 ├── sa-token-storage-redis/     # Redis 存储实现
 ├── sa-token-storage-database/  # 数据库存储实现
-├── sa-token-plugin-axum/       # Axum 框架集成
-├── sa-token-plugin-actix-web/  # Actix-web 框架集成
-└── ...（其他框架插件）
+├── sa-token-plugin-axum/       # Axum（默认 axum-08）
+├── sa-token-plugin-actix-web/  # Actix-web 门面（默认 v4；含 -core / -v4 / -v5）
+├── sa-token-plugin-rocket/     # Rocket 门面（默认 v05）
+├── sa-token-plugin-salvo/      # Salvo 门面（默认 v079）
+├── sa-token-plugin-ntex/       # Ntex 门面（默认 v212）
+├── sa-token-plugin-gotham/     # Gotham 门面（默认 v074）
+├── sa-token-plugin-poem/ …     # Poem、Warp、Tide 等一体化插件
+└── ...
 ```
 
 ## 🎯 解决的问题
@@ -52,7 +57,7 @@ sa-token-rust/
 
 **问题**: Rust 生态中有多个流行的 Web 框架（Axum、Actix-web、Poem、Rocket 等），每个框架的中间件和提取器（extractor）机制不同，开发者需要为每个框架重复实现认证逻辑。
 
-**解决方案**: sa-token-rust 为 9 个主流 Web 框架提供了统一的插件接口，每个插件都提供：
+**解决方案**: sa-token-rust 为 9 个主流 Web 框架提供了统一的插件接口（**0.1.13** 起 Actix / Rocket / Salvo / Gotham / Ntex 以门面 + 绑定 crate 对齐大版本），每个插件都提供：
 - 统一的状态管理（Builder 模式）
 - 双重中间件（基础 + 强制登录）
 - 三种提取器（必须、可选、LoginId）

@@ -309,11 +309,12 @@ mod tests {
     use crate::token::jwt::JwtManager;
 
     fn jwt_config() -> SaTokenConfig {
-        let mut config = SaTokenConfig::default();
-        config.token_style = TokenStyle::Jwt;
-        config.jwt_secret_key = Some("test-secret-key-for-jwt".to_string());
-        config.timeout = 3600;
-        config
+        SaTokenConfig {
+            token_style: TokenStyle::Jwt,
+            jwt_secret_key: Some("test-secret-key-for-jwt".to_string()),
+            timeout: 3600,
+            ..SaTokenConfig::default()
+        }
     }
 
     #[test]
@@ -389,8 +390,10 @@ mod tests {
 
     #[test]
     fn test_generate_with_login_id_and_extra_non_jwt_style() {
-        let mut config = SaTokenConfig::default();
-        config.token_style = TokenStyle::Uuid;
+        let config = SaTokenConfig {
+            token_style: TokenStyle::Uuid,
+            ..SaTokenConfig::default()
+        };
         let extra = serde_json::json!({"key": "value"});
 
         // 非 JWT 风格应该走正常生成逻辑，不 panic

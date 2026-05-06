@@ -81,6 +81,8 @@ sa-token-rust/
     └── StpUtil.md / StpUtil_zh-CN.md
 ```
 
+**Multi-version layout (0.1.13)** — Actix-web, Rocket, Salvo, Ntex, and Gotham publish as a single **`sa-token-plugin-*` façade crate**. Cargo **`features`** pick the backing framework major line (`v4`, `v05`, …); workspace sources also include **`sa-token-plugin-*-core`** (shared HTTP-agnostic pipeline) and **`sa-token-plugin-*-v*`** (per-version bindings). Axum, Warp, Poem, and Tide stay **one crate** with a **binding feature** (`axum-08`, `warp-03`, …).
+
 ## 🎯 Core Components
 
 ### 1. **sa-token-core**
@@ -125,6 +127,7 @@ All plugins provide:
 - Request/Response adapters
 - Token extraction from Header/Cookie/Query
 - Bearer token support
+- Shared path rules and auth pipeline helpers in `sa_token_core::router` (`PathAuthConfig`, `run_auth_flow`, etc.) consumed by versioned layers/middlewares
 
 ## 🚀 Quick Start
 
@@ -135,7 +138,7 @@ All plugins provide:
 ```toml
 [dependencies]
 # All-in-one package - includes core, macros, and storage
-sa-token-plugin-axum = "0.1.12"  # Default: memory storage
+sa-token-plugin-axum = "0.1.13"  # Default: memory storage
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -154,13 +157,13 @@ use sa_token_plugin_axum::*;  // ✨ Everything you need!
 **Choose your storage backend with features:**
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 
 # Multiple storage backends
-sa-token-plugin-axum = { version = "0.1.12", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
 
 # All storage backends
-sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 ```
 
 **Available features:**
@@ -170,11 +173,40 @@ sa-token-plugin-axum = { version = "0.1.12", features = ["full"] }
 - `full`: All storage backends
 
 **Available plugins:**
-- `sa-token-plugin-axum` - Axum framework
-- `sa-token-plugin-actix-web` - Actix-web framework
-- `sa-token-plugin-poem` - Poem framework
-- `sa-token-plugin-rocket` - Rocket framework
-- `sa-token-plugin-warp` - Warp framework
+- `sa-token-plugin-axum` — Axum (`axum-08` default)
+- `sa-token-plugin-actix-web` — Actix-web façade (`v4` default; `v5` is placeholder)
+- `sa-token-plugin-poem` — Poem (`poem-03` default)
+- `sa-token-plugin-rocket` — Rocket façade (`v05` default)
+- `sa-token-plugin-warp` — Warp (`warp-03` default)
+- `sa-token-plugin-salvo` — Salvo façade (`v079` default)
+- `sa-token-plugin-tide` — Tide (`tide-017` default)
+- `sa-token-plugin-gotham` — Gotham façade (`v074` default)
+- `sa-token-plugin-ntex` — Ntex façade (`v212` default)
+
+**Choosing a crate**
+
+- **Integrated plugins (Group A)** — Axum, Warp, Poem, Tide: add one dependency. A **framework binding feature** is on by default (`axum-08`, `warp-03`, `poem-03`, `tide-017`). Add **`memory`** / **`redis`** / **`database`** / **`full`** for storage the same as today.
+- **Façade plugins (Group B)** — Actix-web, Rocket, Salvo, Gotham, Ntex: add the façade crate only; defaults already select a supported major (`v4`+`memory`, `v05`+`memory`, …). Storage features forward to the active binding.
+
+**Actix-web 5.x:** enabling **`v5`** alone is reserved for forward compatibility — **HTTP middleware is not wired yet** (`sa-token-plugin-actix-web-v5` is a placeholder). Use **`v4`** for real services.
+
+**Example `Cargo.toml` (swap the plugin name):**
+
+```toml
+# Axum 0.8 + Redis
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+
+# Actix-web 4.x façade (default v4 + memory) + Redis
+sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+
+# Rocket 0.5 / Salvo / Ntex / Gotham — defaults match current supported lines
+sa-token-plugin-rocket = "0.1.13"
+sa-token-plugin-salvo = "0.1.13"
+sa-token-plugin-ntex = "0.1.13"
+sa-token-plugin-gotham = "0.1.13"
+```
+
+Then: `use sa_token_plugin_<crate_name_with_underscores>::*;`
 
 ---
 
@@ -184,9 +216,9 @@ If you prefer fine-grained control, you can still import packages separately:
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.12"
-sa-token-storage-memory = "0.1.12"
-sa-token-plugin-axum = "0.1.12"
+sa-token-core = "0.1.13"
+sa-token-storage-memory = "0.1.13"
+sa-token-plugin-axum = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -221,7 +253,7 @@ async fn main() {
 **Add Redis feature to your dependency:**
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.1.12", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 ```
 
 **With simplified import:**

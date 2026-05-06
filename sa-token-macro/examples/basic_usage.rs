@@ -86,7 +86,8 @@ impl PublicController {
     async fn home() -> String {
         "Home page - public access".to_string()
     }
-    
+
+    #[allow(dead_code)]
     async fn about() -> String {
         "About page - public access".to_string()
     }
@@ -101,7 +102,8 @@ impl ApiController {
     async fn version() -> String {
         "v1.0.0 - version API is public".to_string()
     }
-    
+
+    #[allow(dead_code)]
     async fn status() -> String {
         "running - status API is public".to_string()
     }

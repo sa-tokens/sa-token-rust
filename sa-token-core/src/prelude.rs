@@ -9,7 +9,10 @@ pub use crate::{
     OnlineManager, OnlineUser, PushMessage, MessageType, MessagePusher, InMemoryPusher,
     DistributedSessionManager, DistributedSession, DistributedSessionStorage, ServiceCredential, InMemoryDistributedStorage,
     SsoServer, SsoClient, SsoManager, SsoTicket, SsoSession, SsoConfig,
-    router::{match_path, match_any, need_auth, PathAuthConfig, AuthResult, process_auth, create_context},
+    router::{
+        match_path, match_any, need_auth, PathAuthConfig, AuthResult, process_auth, create_context,
+        extract_token, run_auth_flow, AuthFlowResult,
+    },
     config::TokenStyle,
     token, error,
 };

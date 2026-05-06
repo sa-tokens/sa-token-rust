@@ -2,8 +2,8 @@
 //
 //! Poem Extractor 实现
 
-use poem::{Request, Result, FromRequest, RequestBody};
-use poem::http::StatusCode;
+use poem_03::{Request, Result, FromRequest, RequestBody};
+use poem_03::http::StatusCode;
 use sa_token_core::{token::TokenValue, error::messages};
 use serde_json::json;
 
@@ -13,7 +13,7 @@ use serde_json::json;
 /// 
 /// # 示例
 /// ```rust,ignore
-/// use poem::{handler, web::Data};
+/// use poem_03::{handler, web::Data};
 /// use sa_token_plugin_poem::SaTokenExtractor;
 /// 
 /// #[handler]
@@ -47,7 +47,7 @@ impl<'a> FromRequest<'a> for SaTokenExtractor {
             .get::<TokenValue>()
             .cloned()
             .ok_or_else(|| {
-                poem::Error::from_string(
+                poem_03::Error::from_string(
                     json!({
                         "code": 401,
                         "message": messages::AUTH_ERROR
@@ -62,7 +62,7 @@ impl<'a> FromRequest<'a> for SaTokenExtractor {
             .get::<String>()
             .cloned()
             .ok_or_else(|| {
-                poem::Error::from_string(
+                poem_03::Error::from_string(
                     json!({
                         "code": 401,
                         "message": messages::AUTH_ERROR
@@ -81,7 +81,7 @@ impl<'a> FromRequest<'a> for SaTokenExtractor {
 /// 
 /// # 示例
 /// ```rust,ignore
-/// use poem::handler;
+/// use poem_03::handler;
 /// use sa_token_plugin_poem::OptionalSaTokenExtractor;
 /// 
 /// #[handler]
@@ -115,7 +115,7 @@ impl<'a> FromRequest<'a> for OptionalSaTokenExtractor {
 /// 
 /// # 示例
 /// ```rust,ignore
-/// use poem::handler;
+/// use poem_03::handler;
 /// use sa_token_plugin_poem::LoginIdExtractor;
 /// 
 /// #[handler]
@@ -132,7 +132,7 @@ impl<'a> FromRequest<'a> for LoginIdExtractor {
             .get::<String>()
             .cloned()
             .ok_or_else(|| {
-                poem::Error::from_string(
+                poem_03::Error::from_string(
                     json!({
                         "code": 401,
                         "message": messages::AUTH_ERROR

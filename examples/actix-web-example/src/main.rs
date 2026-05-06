@@ -262,7 +262,7 @@ async fn user_info(
         }
     }
 
-    let long = StpUtil::get_login_id_as_string();
+    let long = StpUtil::get_login_id_as_string().await;
     match long {
         Ok(id) => {
             tracing::info!("✅ get_login_id_as_long() 返回值: {}", id);

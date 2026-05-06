@@ -169,9 +169,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("11. Delete All Sessions for User");
     let token3 = manager_with_dist.login("user456").await?;
-    let session3 = dist_manager.create_session("user456".to_string(), token3.as_str().to_string()).await?;
+    let _session3 = dist_manager.create_session("user456".to_string(), token3.as_str().to_string()).await?;
     let token4 = manager_with_dist.login("user456").await?;
-    let session4 = dist_manager.create_session("user456".to_string(), token4.as_str().to_string()).await?;
+    let _session4 = dist_manager.create_session("user456".to_string(), token4.as_str().to_string()).await?;
     
     println!("   Created 2 sessions for user456");
     

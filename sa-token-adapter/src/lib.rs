@@ -17,4 +17,15 @@ pub mod utils;
 pub use storage::SaStorage;
 pub use context::{SaRequest, SaResponse, CookieOptions, SameSite};
 pub use framework::FrameworkAdapter;
-pub use utils::{parse_cookies, parse_query_string, build_cookie_string, extract_bearer_token};
+pub use utils::{
+    parse_cookies,
+    parse_query_string,
+    build_cookie_string,
+    strip_bearer_prefix,
+    extract_bearer_or_value,
+    strip_bearer_or_passthrough,
+};
+
+/// 向后兼容；新代码请用 [`strip_bearer_prefix`](utils::strip_bearer_prefix) 或 [`extract_bearer_or_value`](utils::extract_bearer_or_value)。
+#[allow(deprecated)]
+pub use utils::extract_bearer_token;

@@ -142,6 +142,8 @@ use serde::{Serialize, Deserialize};
 use tokio::sync::RwLock;
 use crate::{SaTokenError, SaTokenResult, SaTokenManager};
 
+type LogoutCallback = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
 /// SSO 票据结构 | SSO Ticket Structure
 ///
 /// 票据是一个短期、一次性使用的认证令牌
@@ -487,7 +489,7 @@ pub struct SsoClient {
     /// 当前服务 URL | Current service URL
     service_url: String,
     /// 登出回调函数 | Logout callback function
-    logout_callback: Option<Arc<dyn Fn(&str) -> bool + Send + Sync>>,
+    logout_callback: Option<LogoutCallback>,
 }
 
 impl SsoClient {

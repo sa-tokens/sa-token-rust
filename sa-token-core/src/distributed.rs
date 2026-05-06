@@ -635,11 +635,10 @@ impl DistributedSessionManager {
     /// ```
     pub async fn verify_service(&self, service_id: &str, secret: &str) -> Result<ServiceCredential, SaTokenError> {
         let credentials = self.service_credentials.read().await;
-        if let Some(cred) = credentials.get(service_id) {
-            if cred.secret_key == secret {
+        if let Some(cred) = credentials.get(service_id)
+            && cred.secret_key == secret {
                 return Ok(cred.clone());
             }
-        }
         Err(SaTokenError::PermissionDenied)
     }
 

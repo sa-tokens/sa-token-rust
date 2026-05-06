@@ -148,21 +148,13 @@ pub enum TokenStyle {
 }
 
 /// 配置构建器
+#[derive(Default)]
 pub struct SaTokenConfigBuilder {
     config: SaTokenConfig,
     storage: Option<Arc<dyn SaStorage>>,
     listeners: Vec<Arc<dyn SaTokenListener>>,
 }
 
-impl Default for SaTokenConfigBuilder {
-    fn default() -> Self {
-        Self {
-            config: SaTokenConfig::default(),
-            storage: None,
-            listeners: Vec::new(),
-        }
-    }
-}
 
 impl SaTokenConfigBuilder {
     pub fn token_name(mut self, name: impl Into<String>) -> Self {
