@@ -35,16 +35,32 @@
 
 ```
 sa-token-rust/
-├── sa-token-core/              # 核心库（Token、Session、Manager）
-├── sa-token-adapter/           # 适配器接口（Storage、Request/Response）
-├── sa-token-macro/             # 过程宏（#[sa_check_login] 等）
-├── sa-token-storage-memory/    # 内存存储实现
-├── sa-token-storage-redis/     # Redis 存储实现
-├── sa-token-storage-database/  # 数据库存储实现
-├── sa-token-plugin-axum/       # Axum 框架集成
-├── sa-token-plugin-actix-web/  # Actix-web 框架集成
-└── ...（其他框架插件）
+├── sa-token-core/                     # 核心库（Token、Session、Manager）
+│   ├── router.rs                      # 路径鉴权路由器
+│   └── token/generator.rs             # Token 生成器
+├── sa-token-adapter/                  # 适配器接口（Storage、Request/Response）
+├── sa-token-macro/                    # 过程宏（#[sa_check_login] 等）
+├── sa-token-storage-memory/           # 内存存储实现
+├── sa-token-storage-redis/            # Redis 存储实现
+├── sa-token-storage-database/         # 数据库存储实现
+├── sa-token-plugin-axum/              # Axum 框架集成（v08 绑定）
+├── sa-token-plugin-actix-web/         # Actix-web 门面（v4 默认）
+│   ├── sa-token-plugin-actix-web-core/   # 共享核心
+│   ├── sa-token-plugin-actix-web-v4/     # v4 绑定
+│   └── sa-token-plugin-actix-web-v5/     # v5 占位
+├── sa-token-plugin-rocket/            # Rocket 门面（v05 默认）
+│   ├── sa-token-plugin-rocket-core/      # 共享核心
+│   └── sa-token-plugin-rocket-v05/       # v05 绑定
+├── sa-token-plugin-salvo/             # Salvo 门面（v079 默认）
+├── sa-token-plugin-gotham/            # Gotham 门面（v074 默认）
+├── sa-token-plugin-ntex/              # Ntex 门面（v212 默认）
+├── sa-token-plugin-poem/              # Poem 框架集成
+├── sa-token-plugin-warp/              # Warp 框架集成
+├── sa-token-plugin-tide/              # Tide 框架集成
+└── examples/                          # 示例项目
 ```
+
+> **版本分离架构**：门面 crate 通过 Cargo features 在编译时选择框架大版本（如 `v4`/`v5`、`v05`、`v079` 等），每个门面共享一个 `*-core` crate 提供通用逻辑。
 
 ## 🎯 解决的问题
 
@@ -122,7 +138,7 @@ use sa_token_core::StpUtil;
 let token = StpUtil::login("user_id_10001").await?;
 
 // 检查登录状态
-let is_login = StpUtil::is_login("user_id_10001").await;
+let is_login = StpUtil::is_login_by_login_id("user_id_10001").await;
 
 // 登出
 StpUtil::logout(&token).await?;
@@ -205,7 +221,7 @@ use sa_token_core::WsAuthManager;
 let ws_auth = WsAuthManager::new(manager);
 
 // 从 WebSocket 握手请求中提取 Token 并验证
-let user_id = ws_auth.authenticate_connection(ws_request).await?;
+let user_id = ws_auth.authenticate(&headers, &query).await?;
 ```
 
 ### 7. **安全特性缺失**
@@ -257,8 +273,8 @@ impl SaTokenListener for MyListener {
     }
 }
 
-// 注册监听器
-StpUtil::register_listener(Arc::new(MyListener)).await;
+// 注册监听器（同步方法）
+StpUtil::register_listener(Arc::new(MyListener));
 ```
 
 ## 💻 代码示例
@@ -332,8 +348,8 @@ async fn login(Json(req): Json<LoginRequest>) -> Json<LoginResponse> {
 // 需要登录的接口
 #[sa_check_login]
 async fn user_info() -> Json<UserInfo> {
-    // 获取当前登录用户 ID（从 Token 中提取）
-    let login_id = StpUtil::get_login_id().await.unwrap();
+    // 获取当前登录用户 ID（从请求上下文提取）
+    let login_id = StpUtil::get_login_id_as_string().await.unwrap();
     
     Json(UserInfo {
         id: login_id.clone(),
@@ -465,8 +481,8 @@ impl SaTokenListener for LoginAuditListener {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 注册监听器
-    StpUtil::register_listener(Arc::new(LoginAuditListener)).await;
+    // 注册监听器（同步方法）
+    StpUtil::register_listener(Arc::new(LoginAuditListener));
     
     // 现在所有认证事件都会触发监听器
     let token = StpUtil::login("user_123").await?;  // 触发 on_login
@@ -502,7 +518,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("JWT Token: {}", token);
     
     // 验证 Token
-    let is_valid = manager.is_valid(&token).await?;
+    let is_valid = manager.is_valid(&token).await;
     println!("Token 是否有效: {}", is_valid);
     
     Ok(())
@@ -512,34 +528,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 示例 6: 在线用户管理
 
 ```rust
-use sa_token_core::{OnlineManager, StpUtil};
-use sa_token_storage_memory::MemoryStorage;
-use std::sync::Arc;
+use sa_token_core::{OnlineManager, OnlineUser, StpUtil};
+use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let storage = Arc::new(MemoryStorage::new());
-    let online_manager = OnlineManager::new(storage.clone());
+    let online_manager = OnlineManager::new();
     
     // 用户登录
     let token = StpUtil::login("user_123").await?;
     
     // 标记用户在线
-    online_manager.add_online_user("user_123", "web").await?;
+    let user = OnlineUser {
+        login_id: "user_123".to_string(),
+        token: token.as_str().to_string(),
+        device: "web".to_string(),
+        connect_time: chrono::Utc::now(),
+        last_activity: chrono::Utc::now(),
+        metadata: HashMap::new(),
+    };
+    online_manager.mark_online(user).await;
     
     // 获取在线用户列表
-    let online_users = online_manager.get_online_users().await?;
+    let online_users = online_manager.get_online_users().await;
     println!("在线用户: {:?}", online_users);
     
+    // 检查用户是否在线
+    if online_manager.is_online("user_123").await {
+        println!("用户在线");
+    }
+    
     // 向用户推送消息
-    online_manager.push_message(
-        "user_123",
-        "system",
-        serde_json::json!({"type": "notification", "content": "您有新的消息"}),
-    ).await?;
+    online_manager.push_to_user("user_123", "您有新的消息".to_string()).await?;
     
     // 移除在线用户
-    online_manager.remove_online_user("user_123").await?;
+    online_manager.mark_offline_all("user_123").await;
     
     Ok(())
 }
@@ -595,10 +618,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 📚 更多资源
 
 - **完整文档**: 查看 [首页](/zh/)
-- **API 参考**: 查看 [StpUtil 文档](/zh/guide/stp-util.md)
-- **JWT 指南**: 查看 [JWT_GUIDE_zh-CN.md](/zh/guide/jwt.md)
-- **OAuth2 指南**: 查看 [OAUTH2_GUIDE_zh-CN.md](/zh/guide/oauth2.md)
-- **事件监听指南**: 查看 [EVENT_LISTENER_zh-CN.md](/zh/guide/event-listener.md)
+- **API 参考**: 查看 [StpUtil 文档](/zh/guide/stp-util)
+- **JWT 指南**: 查看 [JWT 指南](/zh/guide/jwt)
+- **OAuth2 指南**: 查看 [OAuth2 指南](/zh/guide/oauth2)
+- **事件监听指南**: 查看 [事件监听指南](/zh/guide/event-listener)
 - **示例代码**: 查看 [examples](https://github.com/sa-tokens/sa-token-rust/blob/main/examples/) 目录
 
 ## 🤝 贡献

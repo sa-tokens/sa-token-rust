@@ -169,6 +169,26 @@ claims.add_claim("metadata", json!({
 let role = claims.get_claim("role");
 ```
 
+### JWT with Extra Data at Login Time
+
+```rust
+use sa_token_core::StpUtil;
+use serde_json::json;
+
+// Login with extra data signed into JWT claims
+let token = StpUtil::builder("user_123")
+    .extra_data(json!({
+        "role": "admin",
+        "tenant_id": 42,
+        "permissions": ["read", "write"]
+    }))
+    .login(None)
+    .await?;
+
+// The extra data is embedded in the JWT token itself (not just stored in session)
+// JWT 模式下 extra_data 直接签入 JWT 声明中
+```
+
 ### Checking Expiration
 
 ```rust

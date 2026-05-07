@@ -3,8 +3,8 @@
 A lightweight, high-performance authentication and authorization framework for Rust, inspired by [sa-token](https://github.com/dromara/sa-token).
 
 <div style="margin: 24px 0;">
-  <a href="/zh/" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none; margin-right: 8px;">📖 中文文档</a>
-  <a href="/guide/quick-start" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none;">🚀 Quick Start</a>
+  <a href="./zh/" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none; margin-right: 8px;">📖 中文文档</a>
+  <a href="./guide/quick-start" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none;">🚀 Quick Start</a>
 </div>
 
 ## Features
@@ -33,7 +33,7 @@ Add one dependency and you're ready:
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.13"
+sa-token-plugin-axum = "0.1.14"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -68,13 +68,13 @@ async fn user_info(LoginIdExtractor(login_id): LoginIdExtractor) -> String {
 
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["redis"] }
 
 # All backends
-sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["full"] }
 ```
 
-**Available plugins:** `sa-token-plugin-axum`, `sa-token-plugin-actix-web`, `sa-token-plugin-poem`, `sa-token-plugin-rocket`, `sa-token-plugin-warp`
+**Available plugins:** `sa-token-plugin-axum`, `sa-token-plugin-actix-web` (v4 default), `sa-token-plugin-poem`, `sa-token-plugin-rocket` (v05 default), `sa-token-plugin-warp`, `sa-token-plugin-salvo` (v079 default), `sa-token-plugin-tide`, `sa-token-plugin-gotham` (v074 default), `sa-token-plugin-ntex` (v212 default)
 
 ➡️ **[Full Quick Start Guide →](/guide/quick-start.md)**
 
@@ -99,7 +99,7 @@ StpUtil::set_permissions("user_10001", vec!["user:list".into(), "user:add".into(
 StpUtil::set_roles("user_10001", vec!["admin".into()]).await?;
 
 // Check login
-StpUtil::is_login("user_10001").await;
+StpUtil::is_login_by_login_id("user_10001").await;
 
 // Check permissions
 StpUtil::has_permission("user_10001", "user:list").await;
@@ -281,6 +281,20 @@ impl SaStorage for CustomStorage {
     // ... other methods
 }
 ```
+
+### Version-Split Plugin Architecture
+
+Facade crates use Cargo features to select the framework version at compile time:
+
+| Facade Crate | Feature (default) | Binding Crate |
+|---|---|---|
+| `sa-token-plugin-actix-web` | `v4` | `sa-token-plugin-actix-web-v4` |
+| `sa-token-plugin-rocket` | `v05` | `sa-token-plugin-rocket-v05` |
+| `sa-token-plugin-salvo` | `v079` | `sa-token-plugin-salvo-v079` |
+| `sa-token-plugin-gotham` | `v074` | `sa-token-plugin-gotham-v074` |
+| `sa-token-plugin-ntex` | `v212` | `sa-token-plugin-ntex-v212` |
+
+Each also shares a `-core` crate for common logic (state, adapter, error responses).
 
 ### Framework Integration
 

@@ -42,6 +42,27 @@ match nonce_manager.validate_and_consume(&nonce, "user_123").await {
 
 ---
 
+## 自动续签（auto_renew）
+
+启用后，每次访问时 Token 自动续签。通过 `SaTokenConfig` 配置：
+
+```rust
+let config = SaTokenConfig::builder()
+    .auto_renew(true)           // 启用自动续签
+    .active_timeout(1800)       // 续签时长（> 0 时使用）
+    .timeout(86400)             // 否则回退使用
+    .build_config();
+
+// Token 自动续签发生在：
+// - get_token_info() 调用时
+// - 中间件 token 验证时
+// - 无参数的 StpUtil 方法调用时
+```
+
+**行为**：如果 `active_timeout > 0`，每次访问 Token 续签 `active_timeout` 秒。否则使用 `timeout` 作为续签时长。
+
+---
+
 ## Refresh Token 刷新机制
 
 Refresh Token 允许客户端获取新的访问令牌，而无需用户重新认证。

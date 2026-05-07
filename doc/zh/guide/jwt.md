@@ -169,6 +169,25 @@ claims.add_claim("metadata", json!({
 let role = claims.get_claim("role");
 ```
 
+### 登录时携带额外数据签入 JWT
+
+```rust
+use sa_token_core::StpUtil;
+use serde_json::json;
+
+// 登录时签名额外数据到 JWT 声明中
+let token = StpUtil::builder("user_123")
+    .extra_data(json!({
+        "role": "admin",
+        "tenant_id": 42,
+        "permissions": ["read", "write"]
+    }))
+    .login(None)
+    .await?;
+
+// extra_data 直接签入 JWT token 中（而非仅存储于 session）
+```
+
 ### 检查过期
 
 ```rust

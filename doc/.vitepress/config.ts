@@ -4,6 +4,7 @@ const enSidebar = [
   {
     text: '🚀 Quick Start',
     items: [
+      { text: 'Project Introduction', link: '/guide/project-intro' },
       { text: 'Home', link: '/' },
       { text: 'Quick Start Guide', link: '/guide/quick-start' },
     ]
@@ -44,6 +45,7 @@ const zhSidebar = [
   {
     text: '🚀 快速入门',
     items: [
+      { text: '项目介绍', link: '/zh/guide/project-intro' },
       { text: '首页', link: '/zh/' },
       { text: '快速入门指南', link: '/zh/guide/quick-start' },
     ]
@@ -75,7 +77,6 @@ const zhSidebar = [
   {
     text: '参考',
     items: [
-      { text: '项目介绍', link: '/zh/guide/project-intro' },
       { text: '错误参考', link: '/zh/reference/error-reference' },
     ]
   },

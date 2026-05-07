@@ -10,7 +10,7 @@ Add a single dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.13"  # Default: memory storage
+sa-token-plugin-axum = "0.1.14"  # Default: memory storage
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -31,13 +31,13 @@ use sa_token_plugin_axum::*;  // Everything you need!
 
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["redis"] }
 
 # Multiple storage backends
-sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["memory", "redis"] }
 
 # All storage backends
-sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["full"] }
 ```
 
 **Available features:**
@@ -46,7 +46,7 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 - `database`: Database storage
 - `full`: All storage backends
 
-**Available plugins (0.1.13):**
+**Available plugins (0.1.14):**
 - `sa-token-plugin-axum` — Axum (`axum-08` default)
 - `sa-token-plugin-actix-web` — Actix-web façade (`v4` default; `v5` placeholder-only)
 - `sa-token-plugin-poem` — Poem (`poem-03` default)
@@ -59,14 +59,14 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 
 **Choosing a crate**
 - **Integrated (Group A)** — Axum, Warp, Poem, Tide: one dependency; binding feature is enabled by default.
-- **Façade (Group B)** — Actix-web, Rocket, Salvo, Gotham, Ntex: one dependency; defaults select the supported major (`v4`, `v05`, …). Do **not** use Actix **`v5`** for production HTTP yet.
+- **Façade (Group B)** — Actix-web, Rocket, Salvo, Gotham, Ntex: one dependency; defaults select the supported major via Cargo features (`v4`, `v05`, …). Do **not** use Actix **`v5`** for production HTTP yet.
 
 **More `Cargo.toml` examples**
 
 ```toml
-sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
-sa-token-plugin-rocket = "0.1.13"
-sa-token-plugin-salvo = "0.1.13"
+sa-token-plugin-actix-web = { version = "0.1.14", features = ["redis"] }
+sa-token-plugin-rocket = "0.1.14"
+sa-token-plugin-salvo = "0.1.14"
 ```
 
 Full framework matrix: [README.md](../../README.md#-quick-start) in the repository root.
@@ -79,9 +79,9 @@ If you prefer fine-grained control:
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.13"
-sa-token-storage-memory = "0.1.13"
-sa-token-plugin-axum = "0.1.13"
+sa-token-core = "0.1.14"
+sa-token-storage-memory = "0.1.14"
+sa-token-plugin-axum = "0.1.14"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -197,7 +197,7 @@ use sa_token_core::StpUtil;
 
 // User login
 let token = StpUtil::login("user_id_10001").await?;
-println!("Token: {}", token.value());
+println!("Token: {}", token.as_str());
 
 // Set permissions and roles
 StpUtil::set_permissions(
@@ -269,8 +269,18 @@ let state = SaTokenState::builder()
     .token_name("X-Token")           // Custom token name
     .timeout(7200)                    // Token timeout (seconds)
     .active_timeout(1800)             // Activity timeout (seconds)
+    .auto_renew(true)                 // Auto-renew token on access
+    .enable_nonce(true)               // Enable replay attack protection
+    .nonce_timeout(300)               // Nonce validity period (seconds)
+    .enable_refresh_token(true)       // Enable refresh token
+    .refresh_token_timeout(604800)    // Refresh token timeout (default 7 days)
+    .jwt_secret_key("your-secret")    // JWT signing key (JWT style only)
+    .jwt_algorithm("HS256")           // JWT algorithm
+    .jwt_issuer("my-app")             // JWT issuer claim
+    .jwt_audience("web-users")        // JWT audience claim
     .build();
 ```
+**auto_renew**: When enabled, tokens are automatically renewed on every access (e.g., middleware validation). The renewal duration is `active_timeout` (if > 0) or `timeout` otherwise.
 
 ---
 
@@ -278,40 +288,52 @@ let state = SaTokenState::builder()
 
 ```
 sa-token-rust/
-├── sa-token-core/              # Core library (Token, Session, Manager)
-│   ├── token/                  # Token management
-│   │   ├── generator.rs        # Token generation (UUID, Random, JWT, Hash, Timestamp, Tik)
-│   │   ├── validator.rs        # Token validation
-│   │   ├── jwt.rs              # JWT implementation (HS256/384/512, RS256/384/512, ES256/384)
-│   │   └── mod.rs              # Token types (TokenValue, TokenInfo)
-│   ├── session/                # Session management
-│   ├── permission/             # Permission and role checking
-│   ├── event/                  # Event listener system
-│   ├── nonce.rs                # Nonce manager (replay attack prevention)
-│   ├── refresh.rs              # Refresh token manager
-│   ├── oauth2.rs               # OAuth2 authorization code flow
-│   ├── ws.rs                   # WebSocket authentication
-│   ├── online.rs               # Online user management and real-time push
-│   ├── distributed.rs          # Distributed session management
-│   ├── sso.rs                  # SSO single sign-on (Server, Client, Ticket)
-│   ├── manager.rs              # SaTokenManager (core manager)
-│   ├── config.rs               # Configuration and builder
-│   └── util.rs                 # StpUtil (utility class)
-├── sa-token-adapter/           # Adapter interfaces (Storage, Request/Response)
-├── sa-token-macro/             # Procedural macros (#[sa_check_login], etc.)
-├── sa-token-storage-memory/    # Memory storage implementation
-├── sa-token-storage-redis/     # Redis storage implementation
-├── sa-token-storage-database/  # Database storage implementation
-├── sa-token-plugin-axum/       # Axum framework integration
-├── sa-token-plugin-actix-web/  # Actix-web framework integration
-├── sa-token-plugin-poem/       # Poem framework integration
-├── sa-token-plugin-rocket/     # Rocket framework integration
-├── sa-token-plugin-warp/       # Warp framework integration
-├── sa-token-plugin-salvo/      # Salvo framework integration
-├── sa-token-plugin-tide/       # Tide framework integration
-├── sa-token-plugin-gotham/     # Gotham framework integration
-├── sa-token-plugin-ntex/       # Ntex framework integration
-└── examples/                   # Example projects
+├── sa-token-core/                   # Core library (Token, Session, Manager)
+│   ├── token/                       # Token management
+│   │   ├── generator.rs             # Token generation (UUID, Random, JWT, Hash, Timestamp, Tik)
+│   │   ├── validator.rs             # Token validation
+│   │   ├── jwt.rs                   # JWT implementation (HS256/384/512, RS256/384/512, ES256/384)
+│   │   └── mod.rs                   # Token types (TokenValue, TokenInfo)
+│   ├── session/                     # Session management
+│   ├── permission/                  # Permission and role checking
+│   ├── event/                       # Event listener system
+│   ├── nonce.rs                     # Nonce manager (replay attack prevention)
+│   ├── refresh.rs                   # Refresh token manager
+│   ├── oauth2.rs                    # OAuth2 authorization code flow
+│   ├── ws.rs                        # WebSocket authentication
+│   ├── online.rs                    # Online user management and real-time push
+│   ├── distributed.rs               # Distributed session management
+│   ├── sso.rs                       # SSO single sign-on (Server, Client, Ticket)
+│   ├── router.rs                    # Path-based authentication router
+│   ├── manager.rs                   # SaTokenManager (core manager)
+│   ├── config.rs                    # Configuration and builder
+│   └── util.rs                      # StpUtil (utility class)
+├── sa-token-adapter/                # Adapter interfaces (Storage, Request/Response)
+├── sa-token-macro/                  # Procedural macros (#[sa_check_login], etc.)
+├── sa-token-storage-memory/         # Memory storage implementation
+├── sa-token-storage-redis/          # Redis storage implementation
+├── sa-token-storage-database/       # Database storage implementation
+├── sa-token-plugin-axum/            # Axum framework integration (v08 binding)
+├── sa-token-plugin-actix-web/       # Actix-web facade → v4/v5 bindings
+│   ├── sa-token-plugin-actix-web-core/  # Shared Actix-web core (state, adapter, errors)
+│   ├── sa-token-plugin-actix-web-v4/    # Actix-web 4.x binding
+│   └── sa-token-plugin-actix-web-v5/    # Actix-web 5.x binding (placeholder)
+├── sa-token-plugin-poem/            # Poem framework integration
+├── sa-token-plugin-rocket/          # Rocket facade → v05 binding
+│   ├── sa-token-plugin-rocket-core/ # Shared Rocket core
+│   └── sa-token-plugin-rocket-v05/  # Rocket 0.5.x binding
+├── sa-token-plugin-warp/            # Warp framework integration
+├── sa-token-plugin-salvo/           # Salvo facade → v079 binding
+│   ├── sa-token-plugin-salvo-core/  # Shared Salvo core
+│   └── sa-token-plugin-salvo-v079/  # Salvo 0.79.x binding
+├── sa-token-plugin-tide/            # Tide framework integration
+├── sa-token-plugin-gotham/          # Gotham facade → v074 binding
+│   ├── sa-token-plugin-gotham-core/ # Shared Gotham core
+│   └── sa-token-plugin-gotham-v074/ # Gotham 0.7.x binding
+├── sa-token-plugin-ntex/            # Ntex facade → v212 binding
+│   ├── sa-token-plugin-ntex-core/   # Shared Ntex core
+│   └── sa-token-plugin-ntex-v212/   # Ntex 2.x binding
+└── examples/                        # Example projects
 ```
 
 ---

@@ -453,12 +453,9 @@ let bus = StpUtil::event_bus();
 // 注册监听器（同步，不需要 .await！）
 StpUtil::register_listener(Arc::new(MyListener));
 
-// 一次注册多个监听器
-StpUtil::register_listeners(vec![
-    Arc::new(MyListener),
-    Arc::new(LoggingListener),
-    Arc::new(DatabaseListener),
-]);
+// 注册多个监听器
+StpUtil::register_listener(Arc::new(LoggingListener));
+StpUtil::register_listener(Arc::new(DatabaseListener));
 ```
 
 ### 使用 Builder 模式

@@ -453,12 +453,9 @@ let bus = StpUtil::event_bus();
 // Register listener (synchronous, no .await needed!)
 StpUtil::register_listener(Arc::new(MyListener));
 
-// Register multiple listeners at once
-StpUtil::register_listeners(vec![
-    Arc::new(MyListener),
-    Arc::new(LoggingListener),
-    Arc::new(DatabaseListener),
-]);
+// Register multiple listeners
+StpUtil::register_listener(Arc::new(LoggingListener));
+StpUtil::register_listener(Arc::new(DatabaseListener));
 ```
 
 ### Using with Builder Pattern

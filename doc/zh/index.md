@@ -3,8 +3,8 @@
 一个轻量级、高性能的 Rust 认证授权框架，灵感来自 [sa-token](https://github.com/dromara/sa-token)。
 
 <div style="margin: 24px 0;">
-  <a href="/" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none; margin-right: 8px;">📖 English</a>
-  <a href="/zh/guide/quick-start" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none;">🚀 快速开始</a>
+  <a href="../" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none; margin-right: 8px;">📖 English</a>
+  <a href="./guide/quick-start" style="display: inline-block; padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; text-decoration: none;">🚀 快速开始</a>
 </div>
 
 ## 特性
@@ -33,7 +33,7 @@
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.13"
+sa-token-plugin-axum = "0.1.14"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -68,13 +68,13 @@ async fn user_info(LoginIdExtractor(login_id): LoginIdExtractor) -> String {
 
 ```toml
 # Redis 存储
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["redis"] }
 
 # 所有后端
-sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.14", features = ["full"] }
 ```
 
-**可用的插件：** `sa-token-plugin-axum`、`sa-token-plugin-actix-web`、`sa-token-plugin-poem`、`sa-token-plugin-rocket`、`sa-token-plugin-warp`
+**可用的插件：** `sa-token-plugin-axum`、`sa-token-plugin-actix-web`（默认 v4）、`sa-token-plugin-poem`、`sa-token-plugin-rocket`（默认 v05）、`sa-token-plugin-warp`、`sa-token-plugin-salvo`（默认 v079）、`sa-token-plugin-tide`、`sa-token-plugin-gotham`（默认 v074）、`sa-token-plugin-ntex`（默认 v212）
 
 ➡️ **[完整快速入门指南 →](/zh/guide/quick-start.md)**
 
@@ -99,7 +99,7 @@ StpUtil::set_permissions("user_10001", vec!["user:list".into(), "user:add".into(
 StpUtil::set_roles("user_10001", vec!["admin".into()]).await?;
 
 // 检查登录状态
-StpUtil::is_login("user_10001").await;
+StpUtil::is_login_by_login_id("user_10001").await;
 
 // 检查权限
 StpUtil::has_permission("user_10001", "user:list").await;
@@ -281,6 +281,20 @@ impl SaStorage for CustomStorage {
     // ... 其他方法
 }
 ```
+
+### 版本分离插件架构
+
+门面 crate 使用 Cargo features 在编译时选择框架版本：
+
+| 门面 Crate | Feature（默认） | 绑定 Crate |
+|---|---|---|
+| `sa-token-plugin-actix-web` | `v4` | `sa-token-plugin-actix-web-v4` |
+| `sa-token-plugin-rocket` | `v05` | `sa-token-plugin-rocket-v05` |
+| `sa-token-plugin-salvo` | `v079` | `sa-token-plugin-salvo-v079` |
+| `sa-token-plugin-gotham` | `v074` | `sa-token-plugin-gotham-v074` |
+| `sa-token-plugin-ntex` | `v212` | `sa-token-plugin-ntex-v212` |
+
+每个门面还共享一个 `-core` crate 用于通用逻辑（状态、适配器、错误响应）。
 
 ### 框架集成
 
