@@ -3916,12 +3916,16 @@ name = "sa-token-integration-tests"
 version = "0.1.15"
 dependencies = [
  "actix-web",
+ "async-trait",
  "axum",
+ "chrono",
  "http 1.4.0",
+ "sa-token-adapter",
  "sa-token-core",
  "sa-token-plugin-actix-web-v4",
  "sa-token-plugin-axum",
  "sa-token-storage-memory",
+ "serde_json",
  "tokio",
  "tower",
 ]

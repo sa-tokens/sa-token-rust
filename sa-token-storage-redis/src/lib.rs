@@ -322,8 +322,10 @@ impl SaStorage for RedisStorage {
     async fn mget(&self, keys: &[&str]) -> StorageResult<Vec<Option<String>>> {
         let mut conn = self.client.clone();
         let full_keys: Vec<String> = keys.iter().map(|k| self.full_key(k)).collect();
-        
-        conn.get(&full_keys).await
+
+        // redis 1.x 的 `get` 只接受 ToSingleRedisArg，批量取值需走 `mget`
+        // redis 1.x's `get` only accepts ToSingleRedisArg; use `mget` for multi-key reads
+        conn.mget(&full_keys).await
             .map_err(|e| StorageError::OperationFailed(e.to_string()))
     }
     

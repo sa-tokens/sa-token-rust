@@ -370,15 +370,10 @@ impl JwtManager {
     /// Warning: This does not validate the signature!
     /// 警告：这不会验证签名！
     pub fn decode_without_validation(&self, token: &str) -> SaTokenResult<JwtClaims> {
-        let mut validation = Validation::new(self.algorithm.into());
-        validation.insecure_disable_signature_validation();
-        validation.validate_exp = false;
-
-        let decoding_key = DecodingKey::from_secret(self.secret.as_bytes());
-
-        let token_data = decode::<JwtClaims>(token, &decoding_key, &validation).map_err(|e| {
-            SaTokenError::InvalidToken(format!("Failed to decode JWT: {}", e))
-        })?;
+        // jsonwebtoken 10.x 起 `Validation::insecure_disable_signature_validation` 已废弃，
+        // 官方推荐使用 `jsonwebtoken::dangerous::insecure_decode`，仅做编解码不校验签名/过期。
+        let token_data = jsonwebtoken::dangerous::insecure_decode::<JwtClaims>(token)
+            .map_err(|e| SaTokenError::InvalidToken(format!("Failed to decode JWT: {}", e)))?;
 
         Ok(token_data.claims)
     }
