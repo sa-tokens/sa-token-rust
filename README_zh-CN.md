@@ -196,7 +196,7 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 **可用的 features：**
 - `memory`（默认）：内存存储
 - `redis`：Redis 存储  
-- `database`：数据库存储
+- `database`：数据库存储(暂时没有实现)
 - `full`：所有存储后端
 
 **可用的插件：**
