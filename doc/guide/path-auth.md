@@ -18,7 +18,7 @@ Path-based authentication allows you to configure which routes require authentic
 
 ## Quick Start
 
-**Dependencies (0.1.13):** use **`sa-token-plugin-actix-web`** with default **`v4`** + **`memory`** for Actix-web (see [Quick Start](./quick-start.md)).
+**Dependencies (0.1.14):** use **`sa-token-plugin-actix-web`** with default **`v4`** + **`memory`** for Actix-web (see [Quick Start](./quick-start.md)).
 
 ### Basic Usage
 
@@ -127,7 +127,7 @@ let config = PathAuthConfig::new()
 
 ## Framework Integration
 
-Built-in **`with_path_auth`** examples follow for Actix-web, Axum, Poem, Salvo, Ntex, and Tide. Rocket, Gotham, and Warp provide global auth layers first — combine **`PathAuthConfig`** in handlers or macros when you need path rules ([full guide](../../../docs/PATH_AUTH_GUIDE.md)).
+Built-in **`with_path_auth`** examples follow for Actix-web, Axum, Poem, Salvo, Ntex, and Tide. Rocket, Gotham, and Warp provide global auth layers first — combine **`PathAuthConfig`** in handlers or macros when you need path rules ([full guide](https://github.com/sa-tokens/sa-token-rust/blob/main/docs/PATH_AUTH_GUIDE.md)).
 
 ### Actix-web
 
@@ -238,5 +238,18 @@ impl PathAuthConfig {
 pub fn match_path(path: &str, pattern: &str) -> bool;
 pub fn match_any(path: &str, patterns: &[&str]) -> bool;
 pub fn need_auth(path: &str, include: &[&str], exclude: &[&str]) -> bool;
+pub fn extract_token<R: SaRequest>(req: &R, token_name: &str) -> Option<String>;
+pub async fn run_auth_flow<R: SaRequest>(req: &R, manager: &SaTokenManager, config: Option<&PathAuthConfig>) -> AuthFlowResult;
+```
+
+### AuthFlowResult
+
+```rust
+impl AuthFlowResult {
+    // true if binding should respond 401 (path requires auth, token missing/invalid)
+    pub fn should_reject(&self) -> bool;
+    // Run future with this flow's SaTokenContext (await-safe)
+    pub async fn run<F, R>(self, fut: F) -> R;
+}
 ```
 

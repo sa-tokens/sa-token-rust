@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-**依赖（0.1.13）：** Actix-web 使用 **`sa-token-plugin-actix-web`**，默认 **`v4`** + **`memory`**（见 [快速入门](./quick-start.md)）。
+**依赖（0.1.14）：** Actix-web 使用 **`sa-token-plugin-actix-web`**，默认 **`v4`** + **`memory`**（见 [快速入门](./quick-start.md)）。
 
 ### 基本用法
 
@@ -127,7 +127,7 @@ let config = PathAuthConfig::new()
 
 ## 框架集成
 
-下文含 Actix-web、Axum、Poem、Salvo、Ntex、Tide 的 **`with_path_auth`** 示例。**Rocket / Gotham / Warp** 以全局层为主，路径规则请在处理器或宏中组合 **`PathAuthConfig`**（完整说明见 [docs 路径鉴权指南](../../../docs/PATH_AUTH_GUIDE_zh-CN.md)）。
+下文含 Actix-web、Axum、Poem、Salvo、Ntex、Tide 的 **`with_path_auth`** 示例。**Rocket / Gotham / Warp** 以全局层为主，路径规则请在处理器或宏中组合 **`PathAuthConfig`**（完整说明见 [文档](https://github.com/sa-tokens/sa-token-rust/blob/main/docs/PATH_AUTH_GUIDE_zh-CN.md)）。
 
 ### Actix-web
 
@@ -238,5 +238,18 @@ impl PathAuthConfig {
 pub fn match_path(path: &str, pattern: &str) -> bool;
 pub fn match_any(path: &str, patterns: &[&str]) -> bool;
 pub fn need_auth(path: &str, include: &[&str], exclude: &[&str]) -> bool;
+pub fn extract_token<R: SaRequest>(req: &R, token_name: &str) -> Option<String>;
+pub async fn run_auth_flow<R: SaRequest>(req: &R, manager: &SaTokenManager, config: Option<&PathAuthConfig>) -> AuthFlowResult;
+```
+
+### AuthFlowResult
+
+```rust
+impl AuthFlowResult {
+    // 若路径需要鉴权但 token 缺失或无效，返回 true（绑定层应返回 401）
+    pub fn should_reject(&self) -> bool;
+    // 使用本流的 SaTokenContext 执行 future（跨 await 安全）
+    pub async fn run<F, R>(self, fut: F) -> R;
+}
 ```
 

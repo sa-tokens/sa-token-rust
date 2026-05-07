@@ -8,7 +8,11 @@ publish = false
 [dependencies]
 tokio = { workspace = true }
 http = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
 sa-token-core = { path = "../sa-token-core" }
+sa-token-adapter = { path = "../sa-token-adapter" }
 sa-token-storage-memory = { path = "../sa-token-storage-memory" }
 sa-token-plugin-axum = { path = "../sa-token-plugin-axum", features = ["memory"] }
 sa-token-plugin-actix-web-v4 = { path = "../sa-token-plugin-actix-web-v4", features = ["memory"] }

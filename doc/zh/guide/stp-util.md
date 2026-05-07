@@ -47,7 +47,7 @@ use sa_token_core::StpUtil;
 
 // 使用字符串 ID 登录
 let token = StpUtil::login("user_10001").await?;
-println!("生成的 token: {}", token.value());
+println!("生成的 token: {}", token.as_str());
 
 // 使用数字 ID 登录
 let token = StpUtil::login(10001).await?;  // 支持 i32, i64, u32, u64
@@ -80,7 +80,36 @@ let token = StpUtil::builder("user_123")
 
 ```rust
 // 带设备信息登录（用于多设备管理）
-let token = StpUtil::login_by_device("user_10001", "mobile_ios").await?;
+let token = StpUtil::builder("user_10001")
+    .device("mobile_ios")
+    .login(None)
+    .await?;
+```
+
+### 带登录类型的登录
+
+```rust
+// 指定登录类型（如 "admin"、"user"、"api"）
+let token = StpUtil::login_with_type("user_10001", "admin").await?;
+```
+
+### 带额外数据的登录
+
+```rust
+use serde_json::json;
+
+// 登录并附加额外数据（JWT 模式下会签入 JWT 声明）
+let token = StpUtil::login_with_extra(
+    "user_10001",
+    json!({"ip": "192.168.1.1", "device": "mobile"})
+).await?;
+```
+
+### 使用指定的 Manager 登录
+
+```rust
+// 使用特定的 SaTokenManager 实例登录（绕过全局 StpUtil）
+let token = StpUtil::login_with_manager(&manager, "user_10001").await?;
 ```
 
 ## 登出操作
@@ -89,62 +118,141 @@ let token = StpUtil::login_by_device("user_10001", "mobile_ios").await?;
 
 ```rust
 // 通过 login_id 登出
-StpUtil::logout("user_10001").await?;
+StpUtil::logout_by_login_id("user_10001").await?;
 
-// 通过 token 登出
+// 通过 token 登出（接受 &TokenValue）
+StpUtil::logout(&token).await?;
+
+// 或使用别名
 StpUtil::logout_by_token(&token).await?;
 ```
 
 ### 从特定设备登出
 
 ```rust
-// 从特定设备登出
-StpUtil::logout_by_device("user_10001", "mobile_ios").await?;
+// 通过 login_id 登出（会移除该用户所有设备会话）
+StpUtil::logout_by_login_id("user_10001").await?;
 ```
 
 ### 踢用户下线
 
 ```rust
-// 强制登出（踢下线）
+// 强制登出（踢下线）— 移除用户所有会话
 StpUtil::kick_out("user_10001").await?;
+
+// 批量踢出多个用户
+StpUtil::kick_out_batch(&["user_10001", "user_10002", "user_10003"]).await?;
+```
+
+### 上下文登出（请求处理器中）
+
+```rust
+// 登出当前请求的用户（从请求上下文中提取 token）
+StpUtil::logout_current().await?;
 ```
 
 ## Token 验证
 
-### 检查是否登录
-
-```rust
-// 检查用户是否已登录
-let is_logged_in = StpUtil::is_login("user_10001").await;
-
-if is_logged_in {
-    println!("用户已登录");
-} else {
-    println!("用户未登录");
-}
-```
-
-### 验证 Token
+### 检查登录状态
 
 ```rust
 use sa_token_core::token::TokenValue;
 
 let token = TokenValue::new("your_token_string".to_string());
 
-// 检查 token 是否有效
-let is_valid = StpUtil::is_valid(&token).await;
+// 检查 token 是否有效（是否已登录）
+let is_logged_in = StpUtil::is_login(&token).await;
 
-// 获取 token 信息
+// 通过 login_id 检查
+let is_logged_in = StpUtil::is_login_by_login_id("user_10001").await;
+```
+
+### 要求登录（未登录则报错）
+
+```rust
+// token 无效时返回 Err(NotLogin)
+StpUtil::check_login(&token).await?;
+```
+
+### 获取 Token 信息
+
+```rust
+// 获取完整的 token 元数据
 let token_info = StpUtil::get_token_info(&token).await?;
 println!("登录 ID: {}", token_info.login_id);
 println!("设备: {:?}", token_info.device);
+println!("过期时间: {:?}", token_info.expire_time);
 ```
 
 ### 从 Token 获取登录 ID
 
 ```rust
-// 从 token 获取 login_id
-let login_id = StpUtil::get_login_id_by_token(&token).await?;
+// 从 token 值获取 login_id
+let login_id = StpUtil::get_login_id(&token).await?;
+
+// 获取 login_id，失败时返回默认值
+let login_id = StpUtil::get_login_id_or_default(&token, "anonymous").await;
+```
+
+### 通过登录 ID 获取 Token
+
+```rust
+// 获取用户当前的 token
+let token = StpUtil::get_token_by_login_id("user_10001").await?;
+
+// 获取所有活跃 token（多设备场景）
+let tokens = StpUtil::get_all_tokens_by_login_id("user_10001").await?;
+```
+
+### Token 超时管理
+
+```rust
+// 获取 token 剩余有效时间
+if let Some(remaining) = StpUtil::get_token_timeout(&token).await? {
+    println!("Token 还有 {} 秒过期", remaining);
+}
+
+// 手动续期 token
+StpUtil::renew_timeout(&token, 3600).await?; // 延长 1 小时
+```
+
+### Token 工具方法
+
+```rust
+// 创建原始 TokenValue（不执行登录）
+let raw = StpUtil::create_token("custom_token_string");
+
+// 检查 token 格式（长度 >= 16，非空）
+if StpUtil::is_valid_token_format("my_token_string_16ch") {
+    println!("Token 格式有效");
+}
+```
+
+### 上下文 Token 方法（请求处理器中）
+
+```rust
+// 在请求处理器中（token 已由中间件注入）：
+// 这些方法从请求作用域的 SaTokenContext 读取。
+
+// 获取当前 token 值
+let token = StpUtil::get_token_value()?;
+
+// 获取当前 token 信息
+let info = StpUtil::get_token_info_current()?;
+
+// 检查当前请求是否已认证
+if StpUtil::is_login_current() {
+    println!("请求已认证");
+}
+
+// 要求当前请求已登录（未登录返回错误）
+StpUtil::check_login_current()?;
+
+// 获取当前登录 ID（String 类型）
+let login_id = StpUtil::get_login_id_as_string().await?;
+
+// 获取当前登录 ID（i64 类型）
+let user_id = StpUtil::get_login_id_as_long().await?;
 ```
 
 ## Session 管理
@@ -152,32 +260,35 @@ let login_id = StpUtil::get_login_id_by_token(&token).await?;
 ### 获取 Session
 
 ```rust
-// 获取用户 session
+// 获取用户 session（异步 — 从后端存储读取）
 let session = StpUtil::get_session("user_10001").await?;
 
-// 在 session 中存储数据
-session.set("username", "张三".to_string()).await;
-session.set("email", "zhangsan@example.com".to_string()).await;
+// 在 session 中存储数据（同步 — 操作内存中的 SaSession 对象）
+session.set("username", "张三".to_string())?;
+session.set("email", "zhangsan@example.com".to_string())?;
+
+// 保存 session 以持久化到后端
+StpUtil::save_session(&session).await?;
 
 // 从 session 检索数据
-let username: Option<String> = session.get("username").await;
+let username: Option<String> = session.get("username");
 println!("用户名: {:?}", username);
 ```
 
 ### Session 操作
 
 ```rust
-// 检查 session 键是否存在
-let exists = session.has("email").await;
+// 检查键是否存在
+let exists = session.has("email");
 
-// 删除 session 数据
-session.remove("email").await;
+// 删除键
+session.remove("email");
 
 // 清除所有 session 数据
-session.clear().await;
+session.clear();
 
-// 获取所有 session 键
-let keys = session.keys().await;
+// 修改后保存
+StpUtil::save_session(&session).await?;
 ```
 
 ### 删除 Session
@@ -185,6 +296,27 @@ let keys = session.keys().await;
 ```rust
 // 删除用户 session
 StpUtil::delete_session("user_10001").await?;
+```
+
+### Session 便捷方法
+
+```rust
+// 一步设置 session 值（get→set→save）
+StpUtil::set_session_value("user_10001", "theme", "dark").await?;
+
+// 一步获取 session 值
+let theme: Option<String> = StpUtil::get_session_value("user_10001", "theme").await?;
+```
+
+### 直接访问 Session 数据
+
+```rust
+let session = StpUtil::get_session("user_10001").await?;
+
+// session.data 是公开的 HashMap — 使用标准 HashMap 方法
+let keys: Vec<&String> = session.data.keys().collect();
+let values: Vec<&serde_json::Value> = session.data.values().collect();
+let count = session.data.len();
 ```
 
 ## 权限管理
@@ -220,17 +352,30 @@ if has_permission {
 ### 检查多个权限
 
 ```rust
-// 检查用户是否拥有所有权限（AND）
-let has_all = StpUtil::has_permissions_and(
+// 主要方法名：
+let has_all = StpUtil::has_all_permissions(
     "user_10001",
     &["user:list", "user:add"]
 ).await;
 
-// 检查用户是否拥有任一权限（OR）
-let has_any = StpUtil::has_permissions_or(
+let has_any = StpUtil::has_any_permission(
     "user_10001",
     &["user:delete", "admin:all"]
 ).await;
+
+// 别名（行为相同）：
+let has_all = StpUtil::has_permissions_and("user_10001", &["user:list", "user:add"]).await;
+let has_any = StpUtil::has_permissions_or("user_10001", &["user:delete", "admin:all"]).await;
+```
+
+### 添加 / 移除单个权限
+
+```rust
+// 添加单个权限
+StpUtil::add_permission("user_10001", "user:export").await?;
+
+// 移除单个权限
+StpUtil::remove_permission("user_10001", "user:export").await?;
 ```
 
 ### 获取用户权限
@@ -311,6 +456,34 @@ println!("用户角色: {:?}", roles);
 StpUtil::clear_roles("user_10001").await?;
 ```
 
+### 校验 / 添加 / 移除单个角色
+
+```rust
+// 要求拥有某个角色（无则返回错误）
+StpUtil::check_role("user_10001", "admin").await?;
+
+// 添加单个角色
+StpUtil::add_role("user_10001", "moderator").await?;
+
+// 移除单个角色
+StpUtil::remove_role("user_10001", "moderator").await?;
+```
+
+## Token 额外数据
+
+```rust
+use serde_json::json;
+
+// 在已有 token 上设置额外数据
+StpUtil::set_extra_data(&token, json!({"plan": "premium", "quota": 100})).await?;
+
+// 从 token 获取额外数据
+let extra: Option<serde_json::Value> = StpUtil::get_extra_data(&token).await?;
+if let Some(data) = extra {
+    println!("Plan: {}", data["plan"]);
+}
+```
+
 ## 高级用法
 
 ### 完整登录流程示例
@@ -339,13 +512,14 @@ StpUtil::set_roles(
 ).await?;
 
 // 4. 在 session 中存储额外数据
-let session = StpUtil::get_session(login_id).await?;
-session.set("username", "张三".to_string()).await;
-session.set("email", "zhangsan@example.com".to_string()).await;
-session.set("last_login", chrono::Utc::now().to_string()).await;
+let mut session = StpUtil::get_session(login_id).await?;
+session.set("username", "张三".to_string())?;
+session.set("email", "zhangsan@example.com".to_string())?;
+session.set("last_login", chrono::Utc::now().to_string())?;
+StpUtil::save_session(&session).await?;
 
 // 返回 token 给客户端
-Ok(token.value().to_string())
+Ok(token.as_str().to_string())
 ```
 
 ### 中间件中的 Token 验证
@@ -357,17 +531,17 @@ use sa_token_core::token::TokenValue;
 async fn validate_request(token_string: &str) -> Result<String, String> {
     let token = TokenValue::new(token_string.to_string());
     
-    // 验证 token
-    if !StpUtil::is_valid(&token).await {
+    // 验证 token（检查是否已登录）
+    if !StpUtil::is_login(&token).await {
         return Err("无效的 token".to_string());
     }
     
     // 获取 login_id
-    let login_id = StpUtil::get_login_id_by_token(&token).await
+    let login_id = StpUtil::get_login_id(&token).await
         .map_err(|_| "无法获取 login_id".to_string())?;
     
     // 检查用户是否仍然登录
-    if !StpUtil::is_login(&login_id).await {
+    if !StpUtil::is_login_by_login_id(&login_id).await {
         return Err("用户未登录".to_string());
     }
     
@@ -405,19 +579,16 @@ async fn delete_user(operator_id: &str, target_user_id: &str) -> Result<(), Stri
 ```rust
 use sa_token_core::StpUtil;
 
-// 用户从不同设备登录
-let token_web = StpUtil::login_by_device("user_10001", "web").await?;
-let token_mobile = StpUtil::login_by_device("user_10001", "mobile_ios").await?;
-let token_app = StpUtil::login_by_device("user_10001", "desktop_app").await?;
+// 用户从不同设备登录（通过 builder 模式）
+let token_web = StpUtil::builder("user_10001").device("web").login(None).await?;
+let token_mobile = StpUtil::builder("user_10001").device("mobile_ios").login(None).await?;
+let token_app = StpUtil::builder("user_10001").device("desktop_app").login(None).await?;
 
-// 从特定设备登出
-StpUtil::logout_by_device("user_10001", "mobile_ios").await?;
-
-// 用户在其他设备上仍然登录
-assert!(StpUtil::is_login("user_10001").await);
+// 用户在其他设备上仍然登录（并发模式）
+assert!(StpUtil::is_login_by_login_id("user_10001").await);
 
 // 从所有设备登出
-StpUtil::logout("user_10001").await?;
+StpUtil::logout_by_login_id("user_10001").await?;
 ```
 
 ### 使用泛型类型
@@ -454,7 +625,7 @@ use sa_token_core::StpUtil;
 
 match StpUtil::login("user_10001").await {
     Ok(token) => {
-        println!("登录成功: {}", token.value());
+        println!("登录成功: {}", token.as_str());
     }
     Err(e) => {
         eprintln!("登录失败: {:?}", e);
@@ -487,5 +658,5 @@ let token = StpUtil::login("user_10001").await?;
 
 - [首页](/zh/)
 - [示例](https://github.com/sa-tokens/sa-token-rust/blob/main/examples/)
-- [Web 框架集成](#框架集成示例)
+- [Web 框架集成](/zh/guide/framework-integration)
 

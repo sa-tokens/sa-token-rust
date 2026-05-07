@@ -42,6 +42,27 @@ This ensures that even if an attacker captures a valid request, they cannot repl
 
 ---
 
+## Automatic Token Renewal (auto_renew)
+
+When enabled, tokens are automatically renewed on every access. Configure via `SaTokenConfig`:
+
+```rust
+let config = SaTokenConfig::builder()
+    .auto_renew(true)           // Enable auto-renewal
+    .active_timeout(1800)       // Renew by this amount (if > 0)
+    .timeout(86400)             // Or fall back to this
+    .build_config();
+
+// Token auto-renewal happens on:
+// - get_token_info() calls
+// - Middleware token validation
+// - Parameterless StpUtil methods
+```
+
+**Behavior**: If `active_timeout > 0`, the token is renewed by `active_timeout` seconds on each access. Otherwise, it uses `timeout` as the renewal duration.
+
+---
+
 ## Refresh Token
 
 Refresh tokens allow clients to obtain new access tokens without requiring the user to re-authenticate.

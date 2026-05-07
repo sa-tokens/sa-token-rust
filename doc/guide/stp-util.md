@@ -47,7 +47,7 @@ use sa_token_core::StpUtil;
 
 // Login with string ID
 let token = StpUtil::login("user_10001").await?;
-println!("Generated token: {}", token.value());
+println!("Generated token: {}", token.as_str());
 
 // Login with numeric ID
 let token = StpUtil::login(10001).await?;  // i32, i64, u32, u64 supported
@@ -78,7 +78,36 @@ let token = StpUtil::builder("user_123")
 
 ```rust
 // Login with device info (for multi-device management)
-let token = StpUtil::login_by_device("user_10001", "mobile_ios").await?;
+let token = StpUtil::builder("user_10001")
+    .device("mobile_ios")
+    .login(None)
+    .await?;
+```
+
+### Login with Type
+
+```rust
+// Login with a specific login type (e.g., "admin", "user", "api")
+let token = StpUtil::login_with_type("user_10001", "admin").await?;
+```
+
+### Login with Extra Data
+
+```rust
+use serde_json::json;
+
+// Login and attach extra data (signed into JWT claims when using JWT style)
+let token = StpUtil::login_with_extra(
+    "user_10001",
+    json!({"ip": "192.168.1.1", "device": "mobile"})
+).await?;
+```
+
+### Login with Explicit Manager
+
+```rust
+// Login using a specific SaTokenManager instance (bypassing global StpUtil)
+let token = StpUtil::login_with_manager(&manager, "user_10001").await?;
 ```
 
 ## Logout Operations
@@ -87,62 +116,141 @@ let token = StpUtil::login_by_device("user_10001", "mobile_ios").await?;
 
 ```rust
 // Logout by login_id
-StpUtil::logout("user_10001").await?;
+StpUtil::logout_by_login_id("user_10001").await?;
 
-// Logout by token
+// Logout by token (takes &TokenValue)
+StpUtil::logout(&token).await?;
+
+// Or use the alias
 StpUtil::logout_by_token(&token).await?;
 ```
 
 ### Logout from Specific Device
 
 ```rust
-// Logout from a specific device
-StpUtil::logout_by_device("user_10001", "mobile_ios").await?;
+// Logout from a specific device (logout by login_id removes all device sessions)
+StpUtil::logout_by_login_id("user_10001").await?;
 ```
 
 ### Kick User Offline
 
 ```rust
-// Force logout (kick offline)
+// Force logout (kick offline) — removes all sessions for a user
 StpUtil::kick_out("user_10001").await?;
+
+// Kick multiple users at once
+StpUtil::kick_out_batch(&["user_10001", "user_10002", "user_10003"]).await?;
+```
+
+### Context-Aware Logout (Request Handler)
+
+```rust
+// Logout the current request's user (extracts token from request context)
+StpUtil::logout_current().await?;
 ```
 
 ## Token Validation
 
-### Check if Logged In
-
-```rust
-// Check if user is logged in
-let is_logged_in = StpUtil::is_login("user_10001").await;
-
-if is_logged_in {
-    println!("User is logged in");
-} else {
-    println!("User is not logged in");
-}
-```
-
-### Validate Token
+### Check Login Status
 
 ```rust
 use sa_token_core::token::TokenValue;
 
 let token = TokenValue::new("your_token_string".to_string());
 
-// Check if token is valid
-let is_valid = StpUtil::is_valid(&token).await;
+// Check if token is valid (logged in)
+let is_logged_in = StpUtil::is_login(&token).await;
 
-// Get token info
+// Check by login_id
+let is_logged_in = StpUtil::is_login_by_login_id("user_10001").await;
+```
+
+### Require Login (Error if Not)
+
+```rust
+// Returns Err(NotLogin) if token is invalid
+StpUtil::check_login(&token).await?;
+```
+
+### Get Token Info
+
+```rust
+// Get full token metadata
 let token_info = StpUtil::get_token_info(&token).await?;
 println!("Login ID: {}", token_info.login_id);
 println!("Device: {:?}", token_info.device);
+println!("Expires: {:?}", token_info.expire_time);
 ```
 
 ### Get Login ID from Token
 
 ```rust
-// Get login_id from token
-let login_id = StpUtil::get_login_id_by_token(&token).await?;
+// Get login_id from token value
+let login_id = StpUtil::get_login_id(&token).await?;
+
+// Get login_id with default fallback
+let login_id = StpUtil::get_login_id_or_default(&token, "anonymous").await;
+```
+
+### Get Token by Login ID
+
+```rust
+// Retrieve the current token for a user
+let token = StpUtil::get_token_by_login_id("user_10001").await?;
+
+// Get all active tokens (multi-device)
+let tokens = StpUtil::get_all_tokens_by_login_id("user_10001").await?;
+```
+
+### Token Timeout Management
+
+```rust
+// Get remaining timeout for a token
+if let Some(remaining) = StpUtil::get_token_timeout(&token).await? {
+    println!("Token expires in {} seconds", remaining);
+}
+
+// Manually renew token timeout
+StpUtil::renew_timeout(&token, 3600).await?; // extend by 1 hour
+```
+
+### Token Utilities
+
+```rust
+// Create a raw TokenValue (does not login)
+let raw = StpUtil::create_token("custom_token_string");
+
+// Check token format (length >= 16, non-empty)
+if StpUtil::is_valid_token_format("my_token_string_16ch") {
+    println!("Token format is valid");
+}
+```
+
+### Context-Aware Token Methods (Request Handler)
+
+```rust
+// In a request handler (token already injected by middleware):
+// These methods read from the request-scoped SaTokenContext.
+
+// Get current token value
+let token = StpUtil::get_token_value()?;
+
+// Get current token info
+let info = StpUtil::get_token_info_current()?;
+
+// Check if current request is authenticated
+if StpUtil::is_login_current() {
+    println!("Request is authenticated");
+}
+
+// Require login for current request (returns error if not)
+StpUtil::check_login_current()?;
+
+// Get current login_id as String
+let login_id = StpUtil::get_login_id_as_string().await?;
+
+// Get current login_id as i64
+let user_id = StpUtil::get_login_id_as_long().await?;
 ```
 
 ## Session Management
@@ -150,32 +258,35 @@ let login_id = StpUtil::get_login_id_by_token(&token).await?;
 ### Get Session
 
 ```rust
-// Get user session
+// Get user session (async — stored in backend)
 let session = StpUtil::get_session("user_10001").await?;
 
-// Store data in session
-session.set("username", "John Doe".to_string()).await;
-session.set("email", "john@example.com".to_string()).await;
+// Store data in session (sync — operates on in-memory SaSession object)
+session.set("username", "John Doe".to_string())?;
+session.set("email", "john@example.com".to_string())?;
+
+// Save session to persist changes to backend
+StpUtil::save_session(&session).await?;
 
 // Retrieve data from session
-let username: Option<String> = session.get("username").await;
+let username: Option<String> = session.get("username");
 println!("Username: {:?}", username);
 ```
 
 ### Session Operations
 
 ```rust
-// Check if session exists
-let exists = session.has("email").await;
+// Check if key exists
+let exists = session.has("email");
 
-// Remove session data
-session.remove("email").await;
+// Remove a key
+session.remove("email");
 
 // Clear all session data
-session.clear().await;
+session.clear();
 
-// Get all session keys
-let keys = session.keys().await;
+// Save after modifications
+StpUtil::save_session(&session).await?;
 ```
 
 ### Delete Session
@@ -183,6 +294,27 @@ let keys = session.keys().await;
 ```rust
 // Delete user session
 StpUtil::delete_session("user_10001").await?;
+```
+
+### Session Convenience Methods
+
+```rust
+// Set a single session value (get→set→save in one call)
+StpUtil::set_session_value("user_10001", "theme", "dark").await?;
+
+// Get a single session value
+let theme: Option<String> = StpUtil::get_session_value("user_10001", "theme").await?;
+```
+
+### Access Session Data Directly
+
+```rust
+let session = StpUtil::get_session("user_10001").await?;
+
+// session.data is a public HashMap — use standard HashMap methods
+let keys: Vec<&String> = session.data.keys().collect();
+let values: Vec<&serde_json::Value> = session.data.values().collect();
+let count = session.data.len();
 ```
 
 ## Permission Management
@@ -218,17 +350,30 @@ if has_permission {
 ### Check Multiple Permissions
 
 ```rust
-// Check if user has all permissions (AND)
-let has_all = StpUtil::has_permissions_and(
+// Primary method names:
+let has_all = StpUtil::has_all_permissions(
     "user_10001",
     &["user:list", "user:add"]
 ).await;
 
-// Check if user has any permission (OR)
-let has_any = StpUtil::has_permissions_or(
+let has_any = StpUtil::has_any_permission(
     "user_10001",
     &["user:delete", "admin:all"]
 ).await;
+
+// Aliases (same behavior):
+let has_all = StpUtil::has_permissions_and("user_10001", &["user:list", "user:add"]).await;
+let has_any = StpUtil::has_permissions_or("user_10001", &["user:delete", "admin:all"]).await;
+```
+
+### Add / Remove Single Permission
+
+```rust
+// Add a single permission
+StpUtil::add_permission("user_10001", "user:export").await?;
+
+// Remove a single permission
+StpUtil::remove_permission("user_10001", "user:export").await?;
 ```
 
 ### Get User Permissions
@@ -309,6 +454,34 @@ println!("User roles: {:?}", roles);
 StpUtil::clear_roles("user_10001").await?;
 ```
 
+### Check / Add / Remove Single Role
+
+```rust
+// Require a role (returns error if missing)
+StpUtil::check_role("user_10001", "admin").await?;
+
+// Add a single role
+StpUtil::add_role("user_10001", "moderator").await?;
+
+// Remove a single role
+StpUtil::remove_role("user_10001", "moderator").await?;
+```
+
+## Token Extra Data
+
+```rust
+use serde_json::json;
+
+// Set extra data on an existing token
+StpUtil::set_extra_data(&token, json!({"plan": "premium", "quota": 100})).await?;
+
+// Get extra data from a token
+let extra: Option<serde_json::Value> = StpUtil::get_extra_data(&token).await?;
+if let Some(data) = extra {
+    println!("Plan: {}", data["plan"]);
+}
+```
+
 ## Advanced Usage
 
 ### Complete Login Flow Example
@@ -337,13 +510,14 @@ StpUtil::set_roles(
 ).await?;
 
 // 4. Store additional data in session
-let session = StpUtil::get_session(login_id).await?;
-session.set("username", "John Doe".to_string()).await;
-session.set("email", "john@example.com".to_string()).await;
-session.set("last_login", chrono::Utc::now().to_string()).await;
+let mut session = StpUtil::get_session(login_id).await?;
+session.set("username", "John Doe".to_string())?;
+session.set("email", "john@example.com".to_string())?;
+session.set("last_login", chrono::Utc::now().to_string())?;
+StpUtil::save_session(&session).await?;
 
 // Return token to client
-Ok(token.value().to_string())
+Ok(token.as_str().to_string())
 ```
 
 ### Token Validation in Middleware
@@ -355,17 +529,17 @@ use sa_token_core::token::TokenValue;
 async fn validate_request(token_string: &str) -> Result<String, String> {
     let token = TokenValue::new(token_string.to_string());
     
-    // Validate token
-    if !StpUtil::is_valid(&token).await {
+    // Validate token (check if logged in)
+    if !StpUtil::is_login(&token).await {
         return Err("Invalid token".to_string());
     }
     
     // Get login_id
-    let login_id = StpUtil::get_login_id_by_token(&token).await
+    let login_id = StpUtil::get_login_id(&token).await
         .map_err(|_| "Cannot get login_id".to_string())?;
     
     // Check if user is still logged in
-    if !StpUtil::is_login(&login_id).await {
+    if !StpUtil::is_login_by_login_id(&login_id).await {
         return Err("User not logged in".to_string());
     }
     
@@ -403,19 +577,19 @@ async fn delete_user(operator_id: &str, target_user_id: &str) -> Result<(), Stri
 ```rust
 use sa_token_core::StpUtil;
 
-// User logs in from different devices
-let token_web = StpUtil::login_by_device("user_10001", "web").await?;
-let token_mobile = StpUtil::login_by_device("user_10001", "mobile_ios").await?;
-let token_app = StpUtil::login_by_device("user_10001", "desktop_app").await?;
+// User logs in from different devices via builder
+let token_web = StpUtil::builder("user_10001").device("web").login(None).await?;
+let token_mobile = StpUtil::builder("user_10001").device("mobile_ios").login(None).await?;
+let token_app = StpUtil::builder("user_10001").device("desktop_app").login(None).await?;
 
-// Logout from specific device
-StpUtil::logout_by_device("user_10001", "mobile_ios").await?;
+// Kick out a specific device (logout all sessions for that login_id via manager)
+// Note: StpUtil::kick_out removes all sessions for a user.
 
-// User is still logged in on other devices
-assert!(StpUtil::is_login("user_10001").await);
+// User is still logged in on other devices (concurrent mode)
+assert!(StpUtil::is_login_by_login_id("user_10001").await);
 
 // Logout from all devices
-StpUtil::logout("user_10001").await?;
+StpUtil::logout_by_login_id("user_10001").await?;
 ```
 
 ### Working with Generic Types
@@ -452,7 +626,7 @@ use sa_token_core::StpUtil;
 
 match StpUtil::login("user_10001").await {
     Ok(token) => {
-        println!("Login successful: {}", token.value());
+        println!("Login successful: {}", token.as_str());
     }
     Err(e) => {
         eprintln!("Login failed: {:?}", e);
@@ -485,5 +659,5 @@ let token = StpUtil::login("user_10001").await?;
 
 - [Main Documentation](https://github.com/sa-tokens/sa-token-rust)
 - [Examples](https://github.com/sa-tokens/sa-token-rust/blob/main/examples/)
-- [Web Framework Integration](/guide/framework-integration.md)
+- [Web Framework Integration](/guide/framework-integration)
 

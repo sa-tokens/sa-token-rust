@@ -6,19 +6,31 @@ sa-token-rust supports 9 web frameworks through dedicated plugin packages. Each 
 
 ## Supported Frameworks
 
-| Framework | Plugin Package | Notes (0.1.13) |
-|-----------|---------------|--------|
-| **Axum** | `sa-token-plugin-axum` | Default binding `axum-08` |
-| **Actix-web** | `sa-token-plugin-actix-web` | Façade; default **`v4`**; `v5` placeholder |
-| **Poem** | `sa-token-plugin-poem` | Default `poem-03` |
-| **Rocket** | `sa-token-plugin-rocket` | Façade; default **`v05`** |
-| **Warp** | `sa-token-plugin-warp` | Default `warp-03` |
-| **Salvo** | `sa-token-plugin-salvo` | Façade; default **`v079`** |
-| **Tide** | `sa-token-plugin-tide` | Default `tide-017` |
-| **Gotham** | `sa-token-plugin-gotham` | Façade; default **`v074`** |
-| **Ntex** | `sa-token-plugin-ntex` | Façade; default **`v212`** |
+| Framework | Plugin Package | Feature (default) | Binding Crate |
+|-----------|---------------|-------------------|---------------|
+| **Axum** | `sa-token-plugin-axum` | `axum-08` | (internal `v08`) |
+| **Actix-web** | `sa-token-plugin-actix-web` | `v4` | `sa-token-plugin-actix-web-v4` |
+| **Poem** | `sa-token-plugin-poem` | (none) | (direct) |
+| **Rocket** | `sa-token-plugin-rocket` | `v05` | `sa-token-plugin-rocket-v05` |
+| **Warp** | `sa-token-plugin-warp` | (none) | (direct) |
+| **Salvo** | `sa-token-plugin-salvo` | `v079` | `sa-token-plugin-salvo-v079` |
+| **Tide** | `sa-token-plugin-tide` | (none) | (direct) |
+| **Gotham** | `sa-token-plugin-gotham` | `v074` | `sa-token-plugin-gotham-v074` |
+| **Ntex** | `sa-token-plugin-ntex` | `v212` | `sa-token-plugin-ntex-v212` |
 
 Quick reference: [Quick Start](./quick-start.md).
+
+### Version-Split Architecture
+
+Facade crates (Actix-web, Rocket, Salvo, Gotham, Ntex) use Cargo features to select the framework major version at compile time. Each facade re-exports from a version-specific binding crate (`*-v4`, `*-v05`, etc.) and shares a `*-core` crate for common logic (state, adapter, error responses).
+
+```toml
+# Default: v4 (production-ready)
+sa-token-plugin-actix-web = "0.1.14"
+
+# Explicit feature selection
+sa-token-plugin-actix-web = { version = "0.1.14", default-features = false, features = ["v4", "redis"] }
+```
 
 All plugins provide:
 - State management with Builder pattern
@@ -27,6 +39,8 @@ All plugins provide:
 - Request/Response adapters
 - Token extraction from Header/Cookie/Query
 - Bearer token support
+- `SaTokenLayer` for fine-grained route control
+- `with_path_auth(state, config)` for path-based auth rules
 
 ---
 
@@ -34,7 +48,7 @@ All plugins provide:
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.13"
+sa-token-plugin-axum = "0.1.14"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
@@ -169,9 +183,9 @@ warp::serve(routes)
 
 All plugins support two middleware levels:
 
-1. **Basic Middleware** (`SaTokenMiddleware`): Validates tokens and injects login ID into request context, but does NOT block unauthenticated requests. Use when you want to support both public and protected routes.
+1. **Basic Middleware** (Axum: `SaTokenMiddleware` / Actix: `SaTokenMiddleware` / Rocket: `SaTokenFairing`): Validates tokens and injects login ID into request context, but does NOT block unauthenticated requests. Use when you want to support both public and protected routes.
 
-2. **Login-Required Middleware** (`SaTokenLoginMiddleware`): Blocks requests without valid tokens. Use for fully protected route groups.
+2. **Login-Required Middleware** (Axum/Actix: `SaCheckLoginMiddleware` / Rocket: `SaCheckLoginFairing`): Blocks requests without valid tokens. Use for fully protected route groups.
 
 ### Extractors
 
@@ -196,4 +210,42 @@ let state = SaTokenState::builder()
     .storage(Arc::new(MemoryStorage::new()))
     .token_name("X-Auth-Token")  // Custom header/cookie/query name
     .build();
+```
+
+### Layered Middleware (Axum)
+
+```rust
+use sa_token_plugin_axum::{SaTokenLayer, SaCheckLoginLayer, SaCheckPermissionLayer};
+
+let state = SaTokenState::builder()
+    .storage(Arc::new(MemoryStorage::new()))
+    .build();
+
+let app = Router::new()
+    // Global: validate token, inject context (does not block unauthenticated)
+    .layer(SaTokenLayer::new(state.clone()))
+    // Per-route: require login
+    .route("/user/info", get(user_info))
+    .route_layer(SaCheckLoginLayer::new(state.clone()))
+    // Per-route: require specific permission
+    .route("/user/delete", post(delete_user))
+    .route_layer(SaCheckPermissionLayer::new(state.clone(), "user:delete"));
+```
+
+### Path-based Auth Router
+
+```rust
+use sa_token_core::router::{PathAuthConfig, run_auth_flow, extract_token};
+
+let config = PathAuthConfig::new()
+    .include(vec!["/api/**".to_string()])
+    .exclude(vec!["/api/public/**".to_string()]);
+
+// In middleware / layer:
+let token_str = extract_token(&req, token_name);
+let flow = run_auth_flow(&req, &manager, Some(&config)).await;
+if flow.should_reject() {
+    return StatusCode::UNAUTHORIZED;
+}
+flow.run(service.call(req)).await
 ```
