@@ -171,8 +171,7 @@ impl SaTokenListener for MyListener {
 StpUtil::register_listener(Arc::new(MyListener)).await;
 ```
 
-➡️ **[Event Listener Guide →](/guide/event-listener.md)**
-➡️ **[Event Listener Quick Start →](/guide/event-listener-quickstart.md)**
+➡️ **[Event Listener Guide →](/guide/event-listener)**
 
 ### Path-Based Authentication
 

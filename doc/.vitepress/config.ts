@@ -15,7 +15,6 @@ const enSidebar = [
       { text: 'StpUtil API Reference', link: '/guide/stp-util' },
       { text: 'Permission Matching', link: '/guide/permission-matching' },
       { text: 'Event Listeners', link: '/guide/event-listener' },
-      { text: 'Event Listener Quick Start', link: '/guide/event-listener-quickstart' },
       { text: 'Path Auth Guide', link: '/guide/path-auth' },
       { text: 'Token Styles', link: '/guide/token-styles' },
     ]
@@ -56,7 +55,6 @@ const zhSidebar = [
       { text: 'StpUtil API 参考', link: '/zh/guide/stp-util' },
       { text: '权限匹配规则', link: '/zh/guide/permission-matching' },
       { text: '事件监听器', link: '/zh/guide/event-listener' },
-      { text: '事件监听器快速入门', link: '/zh/guide/event-listener-quickstart' },
       { text: '路径鉴权指南', link: '/zh/guide/path-auth' },
       { text: 'Token 风格', link: '/zh/guide/token-styles' },
     ]

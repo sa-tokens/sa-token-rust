@@ -495,7 +495,6 @@ cargo run --example event_listener_example
 
 ## 参考
 
-- [快速开始](/zh/guide/event-listener-quickstart.md)
-- [英文文档](/zh/guide/event-listener.md)
+- [英文文档](/guide/event-listener)
 - [API 文档](https://docs.rs/sa-token-core)
 

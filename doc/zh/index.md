@@ -171,8 +171,7 @@ impl SaTokenListener for MyListener {
 StpUtil::register_listener(Arc::new(MyListener)).await;
 ```
 
-➡️ **[事件监听指南 →](/zh/guide/event-listener.md)**
-➡️ **[事件监听快速入门 →](/zh/guide/event-listener-quickstart.md)**
+➡️ **[事件监听指南 →](/zh/guide/event-listener)**
 
 ### 路径鉴权
 
