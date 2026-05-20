@@ -1,10 +1,41 @@
 // Author: 金书记
 //
 // 中文 | English
-// gRPC 认证错误类型 | gRPC authentication error types
+// gRPC 认证错误类型与扩展类型 | gRPC authentication error types and extension types
 
 use sa_token_core::{error::messages, token::TokenValue};
 use tonic::{Code, Status};
+
+// ============================================================================
+// 中文: Extension 类型（写入 Request::extensions）
+// English: Extension types (inserted into Request::extensions)
+// ============================================================================
+
+/// 中文: 已校验的登录 ID，由 Layer / Interceptor 写入 `Request::extensions`
+/// English: Validated login ID, inserted into `Request::extensions` by Layer / Interceptor
+///
+/// 中文: 使用专用类型而非裸 `String`，避免与其他 extension 冲突
+/// English: Uses a dedicated type instead of bare `String` to avoid extension conflicts
+#[derive(Clone, Debug)]
+pub struct SaTokenLoginId(pub String);
+
+/// 中文: 原始 Bearer Token，由 Layer / Interceptor 写入 `Request::extensions`
+/// English: Raw Bearer Token, inserted into `Request::extensions` by Layer / Interceptor
+///
+/// 中文: 供 logout 等需要原始 token 的场景使用
+/// English: Used for scenarios like logout that need the raw token
+#[derive(Clone, Debug)]
+pub struct SaTokenBearerToken(pub TokenValue);
+
+/// 中文: gRPC URI path，由 `SaTokenGrpcLayer` 写入，供 `GrpcServerInterceptor` 解析路径规则
+/// English: gRPC URI path, written by `SaTokenGrpcLayer` for `GrpcServerInterceptor` path rules
+#[derive(Clone, Debug)]
+pub struct SaTokenGrpcPath(pub String);
+
+// ============================================================================
+// 中文: Token 数据
+// English: Token data
+// ============================================================================
 
 /// 中文: 从 gRPC metadata 中提取的 Token 数据
 /// English: Token data extracted from gRPC metadata
@@ -17,6 +48,11 @@ pub struct GrpcTokenData {
     /// English: Login ID
     pub login_id: Option<String>,
 }
+
+// ============================================================================
+// 中文: 认证错误
+// English: Authentication error
+// ============================================================================
 
 /// 中文: gRPC 认证错误
 /// English: gRPC authentication error
@@ -58,6 +94,11 @@ impl From<AuthError> for Status {
         err.into_status()
     }
 }
+
+// ============================================================================
+// 中文: 权限错误
+// English: Permission error
+// ============================================================================
 
 /// 中文: gRPC 权限错误
 /// English: gRPC permission error

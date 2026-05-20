@@ -4083,9 +4083,11 @@ dependencies = [
  "sa-token-core",
  "sa-token-plugin-actix-web-v4",
  "sa-token-plugin-axum",
+ "sa-token-plugin-tonic",
  "sa-token-storage-memory",
  "serde_json",
  "tokio",
+ "tonic",
  "tower 0.5.3",
 ]
 
@@ -5571,6 +5573,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
 ]

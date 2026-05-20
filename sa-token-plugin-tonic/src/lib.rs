@@ -15,7 +15,8 @@
 //!
 //! ## 特性列表 | Feature List
 //!
-//! - **gRPC 拦截器 | gRPC Interceptors**: 使用 Token 验证进行请求认证
+//! - **Tower 鉴权层 | Tower Auth Layer**: 推荐方式，支持异步 `run_auth_flow` + `PathAuthConfig`
+//! - **gRPC 拦截器 | gRPC Interceptors**: 备选方式，使用 `block_in_place` 同步执行鉴权
 //! - **请求适配 | Request Adaptation**: 将 gRPC metadata 转换为 Sa-Token 请求
 //! - **状态管理 | State Management**: 跨所有 gRPC 服务共享状态
 //! - **权限检查 | Permission Checking**: 内置角色和权限验证辅助函数
@@ -23,23 +24,20 @@
 //!
 //! ## 使用示例 | Usage Example
 //!
-//! ```toml
-//! [dependencies]
-//! sa-token-plugin-tonic = "0.1.15"  # 中文: 默认使用内存存储 | English: Default using memory storage
-//! ```
-//!
 //! ```rust,ignore
-//! use sa_token_plugin_tonic::{SaTokenState, MemoryStorage, GrpcServerInterceptor};
+//! use sa_token_plugin_tonic::{SaTokenState, SaTokenGrpcLayer, PathAuthConfig, MemoryStorage};
 //! use std::sync::Arc;
 //!
-//! // 1. 初始化状态 | Initialize state
 //! let state = SaTokenState::builder()
 //!     .storage(Arc::new(MemoryStorage::new()))
 //!     .timeout(7200)
 //!     .build();
 //!
-//! // 2. 创建认证拦截器 | Create auth interceptor
-//! let interceptor = GrpcServerInterceptor::new(state);
+//! let path_config = PathAuthConfig::new()
+//!     .include(vec!["/auth.AuthService/**".to_string()])
+//!     .exclude(vec!["/auth.AuthService/Login".to_string()]);
+//!
+//! let layer = SaTokenGrpcLayer::with_path_auth(state, path_config);
 //! ```
 
 #[cfg(not(feature = "tonic-012"))]
@@ -52,12 +50,30 @@ pub mod state;
 pub mod adapter;
 pub mod interceptor;
 pub mod error;
+pub mod layer;
 
 // 中文: 公开类型导出 | English: Public type exports
 pub use state::{SaTokenState, SaTokenStateBuilder};
-pub use adapter::{TonicRequestAdapter, TonicResponseAdapter};
-pub use interceptor::{GrpcServerInterceptor, get_login_id_from_request, validate_token_from_request, create_request_adapter};
-pub use error::{AuthError, PermissionError, GrpcTokenData};
+pub use adapter::{TonicRequestAdapter, TonicResponseAdapter, TonicCapturedRequest};
+pub use error::{
+    AuthError, GrpcTokenData, PermissionError, SaTokenBearerToken, SaTokenGrpcPath,
+    SaTokenLoginId,
+};
+pub use interceptor::{
+    GrpcServerInterceptor,
+    get_login_id_from_request,
+    get_bearer_token_from_request,
+    validate_token_from_request,
+    create_request_adapter,
+    check_permission,
+    check_permissions,
+    check_role,
+    check_roles,
+};
+pub use layer::{SaTokenGrpcLayer, SaTokenGrpcMiddleware};
+
+// 中文: 重导出 core router（与 Axum/Salvo 一致）| English: Re-export core router
+pub use sa_token_core::router::{PathAuthConfig, run_auth_flow, AuthFlowResult};
 
 // 中文: 重新导出核心依赖 | English: Re-export core dependencies
 pub use sa_token_core::{self, prelude::*};

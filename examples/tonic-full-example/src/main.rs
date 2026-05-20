@@ -6,9 +6,9 @@
 //
 // 展示如何：| Demonstrates how to:
 // 1. 配置 sa-token | Configure sa-token
-// 2. 加载用户权限和角色 | Load user permissions and roles
-// 3. 使用 gRPC 拦截器 | Use gRPC interceptors
-// 4. 实现完整的认证流程 | Implement complete authentication flow
+// 2. 使用 SaTokenGrpcLayer Tower 层 | Use SaTokenGrpcLayer Tower layer
+// 3. 配置 PathAuthConfig 区分公开/受保护 RPC | Configure PathAuthConfig for public/protected RPCs
+// 4. 在 handler 中通过 get_login_id_from_request 获取已校验的登录 ID
 
 use sa_token_plugin_tonic::*;
 use std::sync::Arc;
@@ -17,12 +17,6 @@ use tonic::{Code, Request, Response, Status};
 pub mod auth {
     tonic::include_proto!("auth");
 }
-
-// ============================================================================
-// API 响应结构 | API Response Structure
-// ============================================================================
-// 注意: 这些结构体在代码中直接使用 proto 类型，未使用这些中间结构
-// Note: These structs are not used directly, proto types are used instead
 
 // ============================================================================
 // gRPC 服务实现 | gRPC Service Implementation
@@ -44,30 +38,28 @@ impl AuthServiceImpl {
 
 #[tonic::async_trait]
 impl auth::auth_service_server::AuthService for AuthServiceImpl {
-    /// 中文: 健康检查（公开接口）
-    /// English: Health check (public endpoint)
+    /// 中文: 健康检查（公开接口，PathAuthConfig exclude 中已排除）
+    /// English: Health check (public endpoint, excluded in PathAuthConfig)
     async fn health_check(
         &self,
         _request: Request<auth::HealthCheckRequest>,
     ) -> Result<Response<auth::HealthCheckResponse>, Status> {
-        tracing::info!("🏥 Health check requested");
+        tracing::info!("Health check requested");
 
         Ok(Response::new(auth::HealthCheckResponse {
             status: "OK".to_string(),
         }))
     }
 
-    /// 中文: 登录接口（公开接口）
-    /// English: Login endpoint (public endpoint)
+    /// 中文: 登录接口（公开接口，PathAuthConfig exclude 中已排除）
+    /// English: Login endpoint (public endpoint, excluded in PathAuthConfig)
     async fn login(
         &self,
         request: Request<auth::LoginRequest>,
     ) -> Result<Response<auth::LoginResponse>, Status> {
         let req = request.into_inner();
-        tracing::info!("🔑 Login request: username={}", req.username);
+        tracing::info!("Login request: username={}", req.username);
 
-        // 中文: 验证用户名密码（这里简化处理）
-        // English: Validate username and password (simplified for demo)
         let (user_id, valid) = match req.username.as_str() {
             "admin" if req.password == "admin123" => ("admin", true),
             "user" if req.password == "user123" => ("user", true),
@@ -76,30 +68,21 @@ impl auth::auth_service_server::AuthService for AuthServiceImpl {
         };
 
         if !valid {
-            tracing::warn!(
-                "❌ Login failed: invalid credentials for user {}",
-                req.username
-            );
             return Err(Status::new(
                 Code::Unauthenticated,
                 "Invalid username or password",
             ));
         }
 
-        // 中文: 执行登录
-        // English: Perform login
         let token = self.state.manager.login(user_id).await.map_err(|e| {
-            tracing::error!("❌ Login failed: {}", e);
             Status::internal(format!("Login failed: {}", e))
         })?;
 
-        // 中文: 获取用户权限和角色
-        // English: Get user permissions and roles
         let permissions = sa_token_core::StpUtil::get_permissions(user_id).await;
         let roles = sa_token_core::StpUtil::get_roles(user_id).await;
 
         tracing::info!(
-            "✅ User {} logged in successfully, permissions: {:?}, roles: {:?}",
+            "User {} logged in, permissions: {:?}, roles: {:?}",
             user_id,
             permissions,
             roles
@@ -113,20 +96,17 @@ impl auth::auth_service_server::AuthService for AuthServiceImpl {
         }))
     }
 
-    /// 中文: 获取用户信息（需要登录）
-    /// English: Get user info (requires login)
+    /// 中文: 获取用户信息（需要登录，Layer 已校验并注入 SaTokenLoginId）
+    /// English: Get user info (requires login, Layer has validated and injected SaTokenLoginId)
     async fn get_user_info(
         &self,
         request: Request<auth::UserInfoRequest>,
     ) -> Result<Response<auth::UserInfoResponse>, Status> {
-        // 中文: 验证 token 并获取登录 ID
-        // English: Validate token and get login ID
-        let login_id = validate_token_from_request(&self.state, &request).await?;
+        let login_id = get_login_id_from_request(&request)
+            .ok_or_else(|| Status::unauthenticated("Not authenticated"))?;
 
-        tracing::info!("📋 GetUserInfo request from user: {}", login_id);
+        tracing::info!("GetUserInfo request from user: {}", login_id);
 
-        // 中文: 获取用户权限和角色
-        // English: Get user permissions and roles
         let permissions = sa_token_core::StpUtil::get_permissions(&login_id).await;
         let roles = sa_token_core::StpUtil::get_roles(&login_id).await;
 
@@ -143,11 +123,10 @@ impl auth::auth_service_server::AuthService for AuthServiceImpl {
         &self,
         request: Request<auth::PermissionsListRequest>,
     ) -> Result<Response<auth::PermissionsListResponse>, Status> {
-        // 中文: 验证 token 并获取登录 ID
-        // English: Validate token and get login ID
-        let login_id = validate_token_from_request(&self.state, &request).await?;
+        let login_id = get_login_id_from_request(&request)
+            .ok_or_else(|| Status::unauthenticated("Not authenticated"))?;
 
-        tracing::info!("🔐 GetPermissions request from user: {}", login_id);
+        tracing::info!("GetPermissions request from user: {}", login_id);
 
         let permissions = sa_token_core::StpUtil::get_permissions(&login_id).await;
 
@@ -160,11 +139,10 @@ impl auth::auth_service_server::AuthService for AuthServiceImpl {
         &self,
         request: Request<auth::RolesListRequest>,
     ) -> Result<Response<auth::RolesListResponse>, Status> {
-        // 中文: 验证 token 并获取登录 ID
-        // English: Validate token and get login ID
-        let login_id = validate_token_from_request(&self.state, &request).await?;
+        let login_id = get_login_id_from_request(&request)
+            .ok_or_else(|| Status::unauthenticated("Not authenticated"))?;
 
-        tracing::info!("👥 GetRoles request from user: {}", login_id);
+        tracing::info!("GetRoles request from user: {}", login_id);
 
         let roles = sa_token_core::StpUtil::get_roles(&login_id).await;
 
@@ -176,13 +154,9 @@ impl auth::auth_service_server::AuthService for AuthServiceImpl {
 // 初始化测试数据 | Initialize Test Data
 // ============================================================================
 
-/// 中文: 初始化测试用户的权限和角色
-/// English: Initialize test user permissions and roles
 async fn init_test_permissions() {
-    tracing::info!("🔐 Initializing test user permissions...");
+    tracing::info!("Initializing test user permissions...");
 
-    // 中文: 管理员用户
-    // English: Admin user
     sa_token_core::StpUtil::set_permissions(
         "admin",
         vec![
@@ -201,10 +175,6 @@ async fn init_test_permissions() {
         .await
         .unwrap();
 
-    tracing::info!("  ✓ Admin (admin) permissions initialized");
-
-    // 中文: 普通用户
-    // English: Regular user
     sa_token_core::StpUtil::set_permissions(
         "user",
         vec!["user:list".to_string(), "user:view".to_string()],
@@ -216,10 +186,6 @@ async fn init_test_permissions() {
         .await
         .unwrap();
 
-    tracing::info!("  ✓ Regular user (user) permissions initialized");
-
-    // 中文: 访客用户
-    // English: Guest user
     sa_token_core::StpUtil::set_permissions("guest", vec!["user:view".to_string()])
         .await
         .unwrap();
@@ -228,8 +194,7 @@ async fn init_test_permissions() {
         .await
         .unwrap();
 
-    tracing::info!("  ✓ Guest user (guest) permissions initialized");
-    tracing::info!("✅ All test user permissions initialized!\n");
+    tracing::info!("All test user permissions initialized");
 }
 
 // ============================================================================
@@ -238,69 +203,49 @@ async fn init_test_permissions() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 中文: 初始化日志
-    // English: Initialize logging
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    tracing::info!("🚀 Starting sa-token-rust Tonic gRPC Full Example");
-    tracing::info!("=========================================\n");
+    tracing::info!("Starting sa-token-rust Tonic gRPC Full Example");
 
-    // 中文: 1. 使用构建器模式创建 sa-token 状态
-    // English: 1. Create sa-token state using builder pattern
+    // 1. 创建 sa-token 状态 | Create sa-token state
     let sa_token_state = SaTokenState::builder()
         .storage(Arc::new(sa_token_plugin_tonic::MemoryStorage::new()))
         .token_name("satoken")
-        .timeout(86400) // 中文: 24小时 | English: 24 hours
+        .timeout(86400)
         .build();
 
-    tracing::info!("✅ SaToken state created");
+    tracing::info!("SaToken state created");
 
-    // 中文: 2. 初始化测试用户的权限和角色
-    // English: 2. Initialize test user permissions and roles
+    // 2. 初始化测试数据 | Initialize test data
     init_test_permissions().await;
 
-    // 中文: 3. 创建认证拦截器
-    // English: 3. Create authentication interceptor
-    let auth_interceptor = GrpcServerInterceptor::new(sa_token_state.clone());
-    tracing::info!("✅ Authentication interceptor created");
+    // 3. 配置 per-RPC 鉴权规则 | Configure per-RPC auth rules
+    let path_config = PathAuthConfig::new()
+        .include(vec!["/auth.AuthService/**".to_string()])
+        .exclude(vec![
+            "/auth.AuthService/HealthCheck".to_string(),
+            "/auth.AuthService/Login".to_string(),
+        ]);
 
-    // 中文: 4. 创建 gRPC 服务
-    // English: 4. Create gRPC service
-    let service = auth::auth_service_server::AuthServiceServer::with_interceptor(
-        AuthServiceImpl::new(sa_token_state.clone()),
-        auth_interceptor,
-    );
+    // 4. 创建 Tower 鉴权层 | Create Tower auth layer
+    let grpc_auth_layer = SaTokenGrpcLayer::with_path_auth(sa_token_state.clone(), path_config);
+    tracing::info!("SaTokenGrpcLayer created with PathAuthConfig");
 
-    // 中文: 5. 启动服务器
-    // English: 5. Start the server
+    // 5. 启动服务器 | Start the server
     let addr = "0.0.0.0:3000".parse()?;
 
-    tracing::info!("📡 gRPC server listening on {}", addr);
-    tracing::info!("");
-    tracing::info!("💡 Test users:");
-    tracing::info!("   - admin/admin123  (管理员 | Admin)");
-    tracing::info!("   - user/user123    (普通用户 | Regular user)");
-    tracing::info!("   - guest/guest123  (访客 | Guest)");
-    tracing::info!("");
-    tracing::info!("🔧 Test commands:");
-    tracing::info!("   # 健康检查 (Health check - public)");
-    tracing::info!(
-        "   grpcurl -plaintext -proto proto/auth.proto {} auth.AuthService/HealthCheck",
-        addr
-    );
-    tracing::info!("");
-    tracing::info!("   # 登录 (Login - public)");
-    tracing::info!("   grpcurl -plaintext -proto proto/auth.proto -d '{{\"username\": \"admin\", \"password\": \"admin123\"}}' {} auth.AuthService/Login",addr);
-    tracing::info!("");
-    tracing::info!("   # 获取用户信息 (Get user info - requires auth)");
-    tracing::info!("   grpcurl -plaintext -proto proto/auth.proto -H \"satoken: Bearer <token>\" {} auth.AuthService/GetUserInfo",addr);
-    tracing::info!("");
-    tracing::info!("=========================================\n");
+    tracing::info!("gRPC server listening on {}", addr);
+    tracing::info!("Test users: admin/admin123, user/user123, guest/guest123");
+    tracing::info!("Public RPCs: HealthCheck, Login");
+    tracing::info!("Protected RPCs: GetUserInfo, GetPermissions, GetRoles");
 
     tonic::transport::Server::builder()
-        .add_service(service)
+        .layer(tower::ServiceBuilder::new().layer(grpc_auth_layer).into_inner())
+        .add_service(auth::auth_service_server::AuthServiceServer::new(
+            AuthServiceImpl::new(sa_token_state.clone()),
+        ))
         .serve(addr)
         .await?;
 

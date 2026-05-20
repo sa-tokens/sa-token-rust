@@ -2,12 +2,115 @@
 //
 // 中文 | English
 // Tonic gRPC 请求/响应适配器 | Tonic gRPC request/response adapters
+//
+// 修复 #4: from_metadata 使用 to_str() 而非 format!("{:?}")
+// 新增 TonicCapturedRequest 供 run_auth_flow 使用
 
-use http::HeaderMap;
+use http::{HeaderMap, Request as HttpRequest};
 use sa_token_adapter::{SaRequest, SaResponse, CookieOptions};
 use sa_token_adapter::utils::parse_cookies;
 use serde::Serialize;
 use std::collections::HashMap;
+
+// ============================================================================
+// 中文: gRPC 请求快照（供 run_auth_flow 使用）
+// English: gRPC request snapshot (for run_auth_flow)
+// ============================================================================
+
+/// 中文: gRPC 请求快照，在 `.await` 前从 HTTP 或 metadata 克隆，避免跨 await 借用
+/// English: gRPC request snapshot, cloned from HTTP or metadata before `.await` to avoid cross-await borrows
+#[derive(Debug, Clone)]
+pub struct TonicCapturedRequest {
+    headers: HashMap<String, String>,
+    method: String,
+    path: String,
+}
+
+impl TonicCapturedRequest {
+    /// 中文: 从 `http::Request` 捕获（`SaTokenGrpcLayer` Tower 层使用）
+    /// English: Capture from `http::Request` (used by `SaTokenGrpcLayer` Tower layer)
+    pub fn from_http<T>(req: &HttpRequest<T>) -> Self {
+        let mut headers = HashMap::new();
+        for (key, value) in req.headers().iter() {
+            if let Ok(v) = value.to_str() {
+                headers.insert(key.as_str().to_string(), v.to_string());
+            }
+        }
+        Self {
+            headers,
+            method: req.method().as_str().to_string(),
+            path: req.uri().path().to_string(),
+        }
+    }
+
+    /// 中文: 从 tonic metadata 捕获（`GrpcServerInterceptor` 使用）
+    /// English: Capture from tonic metadata (used by `GrpcServerInterceptor`)
+    ///
+    /// 中文: 修复: 使用 `to_str()` 而非 `format!("{:?}")` 避免 Debug 引号污染
+    /// English: Fix: uses `to_str()` instead of `format!("{:?}")` to avoid Debug quote pollution
+    /// 中文: 解析 gRPC path（用于 Interceptor，无 HTTP URI 时）
+    /// English: Resolve gRPC path (for Interceptor when HTTP URI is unavailable)
+    pub fn resolve_grpc_path<T>(request: &tonic::Request<T>) -> String {
+        if let Some(p) = request.extensions().get::<crate::error::SaTokenGrpcPath>() {
+            return p.0.clone();
+        }
+        if let Some(m) = request.extensions().get::<tonic::GrpcMethod>() {
+            return format!("/{}/{}", m.service(), m.method());
+        }
+        String::new()
+    }
+
+    pub fn from_metadata(
+        metadata: &tonic::metadata::MetadataMap,
+        path: String,
+        method: impl Into<String>,
+    ) -> Self {
+        let mut headers = HashMap::new();
+        for item in metadata.iter() {
+            if let tonic::metadata::KeyAndValueRef::Ascii(key, value) = item {
+                if let Ok(s) = value.to_str() {
+                    headers.insert(key.as_str().to_string(), s.to_string());
+                }
+            }
+        }
+        Self {
+            headers,
+            method: method.into(),
+            path,
+        }
+    }
+}
+
+impl SaRequest for TonicCapturedRequest {
+    fn get_header(&self, name: &str) -> Option<String> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    }
+
+    fn get_cookie(&self, name: &str) -> Option<String> {
+        self.get_header("cookie")
+            .and_then(|cookies| parse_cookies(&cookies).get(name).cloned())
+    }
+
+    fn get_param(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    fn get_path(&self) -> String {
+        self.path.clone()
+    }
+
+    fn get_method(&self) -> String {
+        self.method.clone()
+    }
+}
+
+// ============================================================================
+// 中文: gRPC 请求适配器（旧接口兼容）
+// English: gRPC request adapter (legacy interface compat)
+// ============================================================================
 
 /// 中文: gRPC 请求适配器，用于包装 tonic metadata
 /// English: gRPC request adapter that wraps tonic metadata
@@ -28,32 +131,18 @@ impl TonicRequestAdapter {
         }
     }
 
-    /// 中文: 从 tonic metadata map 创建请求适配器
-    /// English: Create from tonic metadata map
+    /// 中文: 从 tonic metadata map 创建请求适配器（委托 TonicCapturedRequest 避免重复逻辑）
+    /// English: Create from tonic metadata map (delegates to TonicCapturedRequest to avoid duplication)
     pub fn from_metadata(
         metadata: &tonic::metadata::MetadataMap,
         method: String,
         path: String,
     ) -> Self {
-        let mut headers = HashMap::new();
-        for item in metadata.iter() {
-            match item {
-                tonic::metadata::KeyAndValueRef::Ascii(key, value) => {
-                    // 中文: Ascii 值可以转换为字符串
-                    // English: Ascii values can be converted to str
-                    headers.insert(key.to_string(), format!("{:?}", value));
-                }
-                tonic::metadata::KeyAndValueRef::Binary(key, value) => {
-                    // 中文: Binary 值在 Debug 格式中为 base64 编码
-                    // English: Binary values are base64 encoded in Debug format
-                    headers.insert(key.to_string(), format!("{:?}", value));
-                }
-            }
-        }
+        let cap = TonicCapturedRequest::from_metadata(metadata, path, method);
         Self {
-            headers,
-            method,
-            path,
+            headers: cap.headers,
+            method: cap.method,
+            path: cap.path,
         }
     }
 
@@ -88,12 +177,15 @@ impl TonicRequestAdapter {
 
 impl SaRequest for TonicRequestAdapter {
     fn get_header(&self, name: &str) -> Option<String> {
-        self.headers.get(name).cloned()
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
     }
 
     fn get_cookie(&self, name: &str) -> Option<String> {
-        self.get("cookie")
-            .and_then(|cookies| parse_cookies(cookies).get(name).cloned())
+        self.get_header("cookie")
+            .and_then(|cookies| parse_cookies(&cookies).get(name).cloned())
     }
 
     fn get_param(&self, _name: &str) -> Option<String> {
@@ -108,6 +200,11 @@ impl SaRequest for TonicRequestAdapter {
         self.method.clone()
     }
 }
+
+// ============================================================================
+// 中文: gRPC 响应适配器
+// English: gRPC response adapter
+// ============================================================================
 
 /// 中文: gRPC 响应适配器
 /// English: Response wrapper for gRPC responses
@@ -187,7 +284,8 @@ impl SaResponse for TonicResponseAdapter {
     fn set_json_body<U: Serialize>(&mut self, body: U) -> Result<(), serde_json::Error> {
         let json = serde_json::to_string(&body)?;
         self.body = Some(json);
-        self.headers.push(("Content-Type".to_string(), "application/json".to_string()));
+        self.headers
+            .push(("Content-Type".to_string(), "application/json".to_string()));
         Ok(())
     }
 }

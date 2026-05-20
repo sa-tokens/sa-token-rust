@@ -16,7 +16,9 @@ sa-token-adapter = { path = "../sa-token-adapter" }
 sa-token-storage-memory = { path = "../sa-token-storage-memory" }
 sa-token-plugin-axum = { path = "../sa-token-plugin-axum", features = ["memory"] }
 sa-token-plugin-actix-web-v4 = { path = "../sa-token-plugin-actix-web-v4", features = ["memory"] }
+sa-token-plugin-tonic = { path = "../sa-token-plugin-tonic", features = ["memory"] }
 
 axum-08 = { package = "axum", version = "0.8", default-features = false, features = ["json"] }
 tower-08 = { package = "tower", version = "0.5" }
 actix-web = "4"
+tonic = { version = "0.12" }
