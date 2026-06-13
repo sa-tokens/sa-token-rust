@@ -30,7 +30,7 @@ async fn register_test_service(mgr: &DistributedSessionManager) {
         created_at: Utc::now(),
         permissions: vec!["read".to_string(), "write".to_string()],
     };
-    mgr.register_service(cred).await;
+    mgr.register_service(cred).await.unwrap();
 }
 
 // ── Success cases: service auth ────────────────────────────────────────────

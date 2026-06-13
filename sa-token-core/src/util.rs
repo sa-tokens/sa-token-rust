@@ -366,7 +366,7 @@ impl StpUtil {
         let login_id_str = login_id.to_login_id();
         
         // 从存储中获取该用户的 token
-        let key = format!("sa:login:token:{}", login_id_str);
+        let key = manager.config.make_key("login:token:", &login_id_str);
         match manager.storage.get(&key).await {
             Ok(Some(token_str)) => Ok(TokenValue::new(token_str)),
             Ok(None) => Err(SaTokenError::NotLogin),
@@ -385,7 +385,7 @@ impl StpUtil {
         let login_id_str = login_id.to_login_id();
         
         // 从存储中获取该用户的所有 token
-        let key = format!("sa:login:tokens:{}", login_id_str);
+        let key = manager.config.make_key("login:tokens:", &login_id_str);
         match manager.storage.get(&key).await {
             Ok(Some(tokens_str)) => {
                 let token_strings: Vec<String> = serde_json::from_str(&tokens_str)
@@ -452,85 +452,77 @@ impl StpUtil {
 // ==================== 权限管理 ====================
 
 impl StpUtil {
-    /// 为用户添加权限
+    /// 覆盖设置用户权限列表
+    /// 会完全替换该用户的所有权限
     pub async fn set_permissions(
         login_id: impl LoginId,
         permissions: Vec<String>,
     ) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_permissions.write().await;
-        map.insert(login_id.to_login_id(), permissions);
-        Ok(())
+        Self::get_manager()
+            .set_permissions(&login_id.to_login_id(), permissions)
+            .await
     }
-    
-    /// 为用户添加单个权限
+
+    /// 为用户追加单个权限（已存在则跳过）
     pub async fn add_permission(
         login_id: impl LoginId,
         permission: impl Into<String>,
     ) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_permissions.write().await;
-        let login_id_str = login_id.to_login_id();
-        let permissions = map.entry(login_id_str).or_insert_with(Vec::new);
-        let perm = permission.into();
-        if !permissions.contains(&perm) {
-            permissions.push(perm);
-        }
-        Ok(())
+        Self::get_manager()
+            .add_permission(&login_id.to_login_id(), permission.into())
+            .await
     }
-    
+
     /// 移除用户的某个权限
     pub async fn remove_permission(
         login_id: impl LoginId,
         permission: &str,
     ) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_permissions.write().await;
-        if let Some(permissions) = map.get_mut(&login_id.to_login_id()) {
-            permissions.retain(|p| p != permission);
-        }
-        Ok(())
+        Self::get_manager()
+            .remove_permission(&login_id.to_login_id(), permission)
+            .await
     }
-    
+
     /// 清除用户的所有权限
     pub async fn clear_permissions(login_id: impl LoginId) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_permissions.write().await;
-        map.remove(&login_id.to_login_id());
-        Ok(())
+        Self::get_manager()
+            .clear_permissions(&login_id.to_login_id())
+            .await
     }
-    
+
     /// 获取用户的所有权限
+    /// 存储异常时返回空列表，保持原有 API 语义（返回 Vec 而非 Result）
     pub async fn get_permissions(login_id: impl LoginId) -> Vec<String> {
-        let manager = Self::get_manager();
-        let map = manager.user_permissions.read().await;
-        map.get(&login_id.to_login_id()).cloned().unwrap_or_default()
+        Self::get_manager()
+            .get_permissions(&login_id.to_login_id())
+            .await
+            .unwrap_or_default()
     }
-    
+
     /// 检查用户是否拥有指定权限
+    /// 支持精确匹配与通配符匹配（如 `admin:*` 匹配 `admin:read`）
+    /// 存储读取失败时按"无权限"处理
     pub async fn has_permission(
         login_id: impl LoginId,
         permission: &str,
     ) -> bool {
-        let manager = Self::get_manager();
-        let map = manager.user_permissions.read().await;
-        if let Some(permissions) = map.get(&login_id.to_login_id()) {
-            // 精确匹配
-            if permissions.contains(&permission.to_string()) {
-                return true;
-            }
-            
-            // 通配符匹配（例如 admin:* 匹配 admin:read）
-            for perm in permissions {
-                if perm.ends_with(":*") {
-                    let prefix = &perm[..perm.len() - 2];
-                    if permission.starts_with(prefix) {
-                        return true;
-                    }
-                }
-            }
+        let permissions = match Self::get_manager()
+            .get_permissions(&login_id.to_login_id())
+            .await
+        {
+            Ok(list) => list,
+            Err(_) => return false,
+        };
+
+        // 1. 精确匹配
+        if permissions.iter().any(|p| p == permission) {
+            return true;
         }
-        false
+
+        // 2. 通配符匹配：例如 admin:* 匹配 admin:read
+        permissions.iter().any(|perm| {
+            perm.ends_with(":*") && permission.starts_with(&perm[..perm.len() - 2])
+        })
     }
     
     /// 检查用户是否拥有所有指定权限（AND 逻辑）
@@ -592,72 +584,62 @@ impl StpUtil {
 // ==================== 角色管理 ====================
 
 impl StpUtil {
-    /// 为用户设置角色
+    /// 覆盖设置用户角色列表
+    /// 会完全替换该用户的所有角色
     pub async fn set_roles(
         login_id: impl LoginId,
         roles: Vec<String>,
     ) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_roles.write().await;
-        map.insert(login_id.to_login_id(), roles);
-        Ok(())
+        Self::get_manager()
+            .set_roles(&login_id.to_login_id(), roles)
+            .await
     }
-    
-    /// 为用户添加单个角色
+
+    /// 为用户追加单个角色（已存在则跳过）
     pub async fn add_role(
         login_id: impl LoginId,
         role: impl Into<String>,
     ) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_roles.write().await;
-        let login_id_str = login_id.to_login_id();
-        let roles = map.entry(login_id_str).or_insert_with(Vec::new);
-        let r = role.into();
-        if !roles.contains(&r) {
-            roles.push(r);
-        }
-        Ok(())
+        Self::get_manager()
+            .add_role(&login_id.to_login_id(), role.into())
+            .await
     }
-    
+
     /// 移除用户的某个角色
     pub async fn remove_role(
         login_id: impl LoginId,
         role: &str,
     ) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_roles.write().await;
-        if let Some(roles) = map.get_mut(&login_id.to_login_id()) {
-            roles.retain(|r| r != role);
-        }
-        Ok(())
+        Self::get_manager()
+            .remove_role(&login_id.to_login_id(), role)
+            .await
     }
-    
+
     /// 清除用户的所有角色
     pub async fn clear_roles(login_id: impl LoginId) -> SaTokenResult<()> {
-        let manager = Self::get_manager();
-        let mut map = manager.user_roles.write().await;
-        map.remove(&login_id.to_login_id());
-        Ok(())
+        Self::get_manager()
+            .clear_roles(&login_id.to_login_id())
+            .await
     }
-    
+
     /// 获取用户的所有角色
+    /// 存储异常时返回空列表，保持原有 API 语义
     pub async fn get_roles(login_id: impl LoginId) -> Vec<String> {
-        let manager = Self::get_manager();
-        let map = manager.user_roles.read().await;
-        map.get(&login_id.to_login_id()).cloned().unwrap_or_default()
+        Self::get_manager()
+            .get_roles(&login_id.to_login_id())
+            .await
+            .unwrap_or_default()
     }
-    
-    /// 检查用户是否拥有指定角色
+
+    /// 检查用户是否拥有指定角色（精确匹配）
+    /// 存储读取失败时按"无角色"处理
     pub async fn has_role(
         login_id: impl LoginId,
         role: &str,
     ) -> bool {
-        let manager = Self::get_manager();
-        let map = manager.user_roles.read().await;
-        if let Some(roles) = map.get(&login_id.to_login_id()) {
-            roles.contains(&role.to_string())
-        } else {
-            false
+        match Self::get_manager().get_roles(&login_id.to_login_id()).await {
+            Ok(roles) => roles.iter().any(|r| r == role),
+            Err(_) => false,
         }
     }
     
@@ -759,7 +741,7 @@ impl StpUtil {
         token_info.expire_time = Some(new_expire_time);
         
         // 保存更新后的 token 信息
-        let key = format!("sa:token:{}", token.as_str());
+        let key = manager.config.make_key("token:", token.as_str());
         let value = serde_json::to_string(&token_info)
             .map_err(SaTokenError::SerializationError)?;
         
@@ -785,7 +767,7 @@ impl StpUtil {
         let mut token_info = manager.get_token_info(token).await?;
         token_info.extra_data = Some(extra_data);
         
-        let key = format!("sa:token:{}", token.as_str());
+        let key = manager.config.make_key("token:", token.as_str());
         let value = serde_json::to_string(&token_info)
             .map_err(SaTokenError::SerializationError)?;
         
@@ -893,7 +875,7 @@ impl TokenBuilder {
         }
         
         // 保存更新后的 token 信息
-        let key = format!("sa:token:{}", token.as_str());
+        let key = manager.config.make_key("token:", token.as_str());
         let value = serde_json::to_string(&token_info)
             .map_err(SaTokenError::SerializationError)?;
         

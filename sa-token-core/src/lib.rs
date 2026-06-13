@@ -61,7 +61,7 @@ pub use ws::{WsAuthManager, WsAuthInfo, WsTokenExtractor, DefaultWsTokenExtracto
 pub use online::{OnlineManager, OnlineUser, PushMessage, MessageType, MessagePusher, InMemoryPusher};
 pub use distributed::{
     DistributedSessionManager, DistributedSession, DistributedSessionStorage,
-    ServiceCredential, InMemoryDistributedStorage
+    ServiceCredential, InMemoryDistributedStorage, SaStorageDistributedStorage
 };
 pub use sso::{
     SsoServer, SsoClient, SsoManager, SsoTicket, SsoSession, SsoConfig

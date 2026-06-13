@@ -447,6 +447,7 @@
 
 use crate::error::SaTokenError;
 use async_trait::async_trait;
+use sa_token_adapter::storage::SaStorage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -541,6 +542,14 @@ pub trait DistributedSessionStorage: Send + Sync {
     /// # Arguments | 参数
     /// * `login_id` - User login ID | 用户登录 ID
     async fn get_sessions_by_login_id(&self, login_id: &str) -> Result<Vec<DistributedSession>, SaTokenError>;
+
+    /// 保存服务凭证 | Save a service credential
+    /// 用于把 register_service 的凭证持久化到存储
+    async fn save_credential(&self, credential: ServiceCredential) -> Result<(), SaTokenError>;
+
+    /// 按 service_id 获取服务凭证 | Get a service credential by service_id
+    /// 未找到返回 Ok(None)
+    async fn get_credential(&self, service_id: &str) -> Result<Option<ServiceCredential>, SaTokenError>;
 }
 
 /// Distributed session manager
@@ -549,17 +558,12 @@ pub trait DistributedSessionStorage: Send + Sync {
 /// Manages distributed sessions and service authentication
 /// 管理分布式 Sessions 和服务认证
 pub struct DistributedSessionManager {
-    /// Session storage backend | Session 存储后端
+    /// Session 存储后端
     storage: Arc<dyn DistributedSessionStorage>,
-    
-    /// Current service ID | 当前服务 ID
+    /// 当前服务 ID
     service_id: String,
-    
-    /// Default session timeout | 默认 Session 超时时间
+    /// 默认 Session 超时时间
     session_timeout: Duration,
-    
-    /// Registered service credentials | 已注册的服务凭证
-    service_credentials: Arc<RwLock<HashMap<String, ServiceCredential>>>,
 }
 
 impl DistributedSessionManager {
@@ -589,30 +593,13 @@ impl DistributedSessionManager {
             storage,
             service_id,
             session_timeout,
-            service_credentials: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Register a service for inter-service authentication
-    /// 注册服务以进行服务间认证
-    ///
-    /// # Arguments | 参数
-    /// * `credential` - Service credential information | 服务凭证信息
-    ///
-    /// # Example | 示例
-    /// ```rust,ignore
-    /// let credential = ServiceCredential {
-    ///     service_id: "api-gateway".to_string(),
-    ///     service_name: "API Gateway".to_string(),
-    ///     secret_key: "secret123".to_string(),
-    ///     created_at: Utc::now(),
-    ///     permissions: vec!["read".to_string(), "write".to_string()],
-    /// };
-    /// manager.register_service(credential).await;
-    /// ```
-    pub async fn register_service(&self, credential: ServiceCredential) {
-        let mut credentials = self.service_credentials.write().await;
-        credentials.insert(credential.service_id.clone(), credential);
+    /// 注册服务凭证（持久化到底层存储）
+    /// 返回 Result 以便调用方处理存储错误
+    pub async fn register_service(&self, credential: ServiceCredential) -> Result<(), SaTokenError> {
+        self.storage.save_credential(credential).await
     }
 
     /// Verify a service's credentials
@@ -633,12 +620,14 @@ impl DistributedSessionManager {
     ///     Err(e) => println!("Verification failed: {}", e),
     /// }
     /// ```
+    /// 校验服务凭证
+    /// service_id 存在且 secret_key 匹配时返回凭证，否则返回 PermissionDenied
     pub async fn verify_service(&self, service_id: &str, secret: &str) -> Result<ServiceCredential, SaTokenError> {
-        let credentials = self.service_credentials.read().await;
-        if let Some(cred) = credentials.get(service_id)
-            && cred.secret_key == secret {
-                return Ok(cred.clone());
-            }
+        if let Some(cred) = self.storage.get_credential(service_id).await?
+            && cred.secret_key == secret
+        {
+            return Ok(cred);
+        }
         Err(SaTokenError::PermissionDenied)
     }
 
@@ -861,22 +850,21 @@ impl DistributedSessionManager {
 /// For testing and development purposes
 /// 用于测试和开发目的
 pub struct InMemoryDistributedStorage {
-    /// Sessions storage: session_id -> DistributedSession
     /// Sessions 存储: session_id -> DistributedSession
     sessions: Arc<RwLock<HashMap<String, DistributedSession>>>,
-    
-    /// Login index: login_id -> Vec<session_id>
     /// 登录索引: login_id -> Vec<session_id>
     login_index: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    /// 服务凭证: service_id -> ServiceCredential
+    credentials: Arc<RwLock<HashMap<String, ServiceCredential>>>,
 }
 
 impl InMemoryDistributedStorage {
-    /// Create a new in-memory storage
     /// 创建新的内存存储
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             login_index: Arc::new(RwLock::new(HashMap::new())),
+            credentials: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -1009,6 +997,207 @@ impl DistributedSessionStorage for InMemoryDistributedStorage {
         
         Ok(result)
     }
+
+    /// 保存服务凭证到内存
+    async fn save_credential(&self, credential: ServiceCredential) -> Result<(), SaTokenError> {
+        let mut creds = self.credentials.write().await;
+        creds.insert(credential.service_id.clone(), credential);
+        Ok(())
+    }
+
+    /// 从内存获取服务凭证
+    async fn get_credential(&self, service_id: &str) -> Result<Option<ServiceCredential>, SaTokenError> {
+        let creds = self.credentials.read().await;
+        Ok(creds.get(service_id).cloned())
+    }
+}
+
+/// 基于 SaStorage 的分布式 Session 存储实现
+/// 把分布式 Session、登录索引、服务凭证统一持久化到任意 SaStorage 后端（Redis / 内存 / 数据库）
+///
+/// # 存储键格式
+/// - Session: `{prefix}dsession:{session_id}`
+/// - 登录索引: `{prefix}dsession:index:{login_id}`
+/// - 服务凭证: `{prefix}dservice:{service_id}`
+pub struct SaStorageDistributedStorage {
+    /// 底层通用 KV 存储
+    storage: Arc<dyn SaStorage>,
+    /// 存储键前缀（应与 SaTokenConfig::storage_key_prefix 保持一致）
+    key_prefix: String,
+}
+
+impl SaStorageDistributedStorage {
+    /// 创建适配器
+    ///
+    /// # 参数
+    /// - `storage`: 底层存储实现（可直接复用全局 SaTokenManager 使用的同一个 storage）
+    /// - `key_prefix`: 存储键前缀，建议传入 `config.storage_key_prefix.clone()` 以保持一致
+    pub fn new(storage: Arc<dyn SaStorage>, key_prefix: impl Into<String>) -> Self {
+        Self {
+            storage,
+            key_prefix: key_prefix.into(),
+        }
+    }
+
+    /// 构造 Session 键：{prefix}dsession:{session_id}
+    fn session_key(&self, session_id: &str) -> String {
+        format!("{}dsession:{}", self.key_prefix, session_id)
+    }
+
+    /// 构造登录索引键：{prefix}dsession:index:{login_id}
+    fn index_key(&self, login_id: &str) -> String {
+        format!("{}dsession:index:{}", self.key_prefix, login_id)
+    }
+
+    /// 构造凭证键：{prefix}dservice:{service_id}
+    fn credential_key(&self, service_id: &str) -> String {
+        format!("{}dservice:{}", self.key_prefix, service_id)
+    }
+
+    /// 读取某用户的登录索引（session_id 列表）
+    /// 不存在时返回空 Vec
+    async fn load_index(&self, index_key: &str) -> Result<Vec<String>, SaTokenError> {
+        match self
+            .storage
+            .get(index_key)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?
+        {
+            Some(value) => serde_json::from_str(&value).map_err(SaTokenError::SerializationError),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// 回写登录索引（永久保存，不设 TTL）
+    async fn save_index(&self, index_key: &str, ids: &[String]) -> Result<(), SaTokenError> {
+        let value = serde_json::to_string(ids).map_err(SaTokenError::SerializationError)?;
+        self.storage
+            .set(index_key, &value, None)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))
+    }
+}
+
+#[async_trait]
+impl DistributedSessionStorage for SaStorageDistributedStorage {
+    /// 保存 Session
+    /// 1. 写入会话本体（带 TTL，由后端控制过期）
+    /// 2. 更新登录索引（永久保存，去重；过期 session 在读取时被过滤清理）
+    async fn save_session(&self, session: DistributedSession, ttl: Option<Duration>) -> Result<(), SaTokenError> {
+        let session_key = self.session_key(&session.session_id);
+        let index_key = self.index_key(&session.login_id);
+        let session_id = session.session_id.clone();
+
+        // 1. 写入会话本体
+        let value = serde_json::to_string(&session).map_err(SaTokenError::SerializationError)?;
+        self.storage
+            .set(&session_key, &value, ttl)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
+
+        // 2. 更新登录索引（去重）
+        let mut ids = self.load_index(&index_key).await?;
+        if !ids.contains(&session_id) {
+            ids.push(session_id);
+            self.save_index(&index_key, &ids).await?;
+        }
+        Ok(())
+    }
+
+    /// 按 session_id 读取会话
+    /// 未找到或已过期返回 None
+    async fn get_session(&self, session_id: &str) -> Result<Option<DistributedSession>, SaTokenError> {
+        match self
+            .storage
+            .get(&self.session_key(session_id))
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?
+        {
+            Some(value) => Ok(Some(serde_json::from_str(&value).map_err(SaTokenError::SerializationError)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// 删除会话
+    /// 1. 先读出会话以获得 login_id（用于维护索引）
+    /// 2. 删除会话本体
+    /// 3. 从登录索引中移除该 session_id（无剩余则删除整个索引键）
+    async fn delete_session(&self, session_id: &str) -> Result<(), SaTokenError> {
+        if let Some(session) = self.get_session(session_id).await? {
+            // 1. 删除会话本体
+            self.storage
+                .delete(&self.session_key(session_id))
+                .await
+                .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
+
+            // 2. 从登录索引中移除
+            let index_key = self.index_key(&session.login_id);
+            let mut ids = self.load_index(&index_key).await?;
+            let before = ids.len();
+            ids.retain(|id| id != session_id);
+            if ids.is_empty() {
+                // 无剩余会话则删除整个索引键
+                self.storage
+                    .delete(&index_key)
+                    .await
+                    .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
+            } else if ids.len() != before {
+                self.save_index(&index_key, &ids).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 获取某用户全部会话
+    /// 顺带清理索引中已过期/丢失的 session_id（best-effort 清理，避免索引无限膨胀）
+    async fn get_sessions_by_login_id(&self, login_id: &str) -> Result<Vec<DistributedSession>, SaTokenError> {
+        let index_key = self.index_key(login_id);
+        let ids = self.load_index(&index_key).await?;
+        let original_len = ids.len();
+
+        let mut result = Vec::new();
+        let mut alive_ids = Vec::new();
+        for id in ids {
+            // 会话本体可能因 TTL 已过期 → 读不到则视为失效
+            if let Some(session) = self.get_session(&id).await? {
+                result.push(session);
+                alive_ids.push(id);
+            }
+        }
+
+        // 清理：索引发生收缩时回写
+        if alive_ids.is_empty() {
+            let _ = self.storage.delete(&index_key).await;
+        } else if alive_ids.len() != original_len {
+            let _ = self.save_index(&index_key, &alive_ids).await;
+        }
+
+        Ok(result)
+    }
+
+    /// 保存服务凭证（永久保存）
+    async fn save_credential(&self, credential: ServiceCredential) -> Result<(), SaTokenError> {
+        let key = self.credential_key(&credential.service_id);
+        let value = serde_json::to_string(&credential).map_err(SaTokenError::SerializationError)?;
+        self.storage
+            .set(&key, &value, None)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))
+    }
+
+    /// 按 service_id 读取服务凭证
+    /// 未找到返回 None
+    async fn get_credential(&self, service_id: &str) -> Result<Option<ServiceCredential>, SaTokenError> {
+        match self
+            .storage
+            .get(&self.credential_key(service_id))
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?
+        {
+            Some(value) => Ok(Some(serde_json::from_str(&value).map_err(SaTokenError::SerializationError)?)),
+            None => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1074,7 +1263,7 @@ mod tests {
             permissions: vec!["read".to_string(), "write".to_string()],
         };
 
-        manager.register_service(credential.clone()).await;
+        manager.register_service(credential.clone()).await.unwrap();
 
         let verified = manager.verify_service("service2", "secret123").await.unwrap();
         assert_eq!(verified.service_id, "service2");

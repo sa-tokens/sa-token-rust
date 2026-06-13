@@ -12,7 +12,7 @@ categories.workspace = true
 description = "Ntex framework integration for sa-token-rust (facade over versioned bindings)"
 
 [dependencies]
-sa-token-plugin-ntex-v212 = { version = "0.1.16", path = "../sa-token-plugin-ntex-v212", optional = true }
+sa-token-plugin-ntex-v212 = { version = "0.1.17", path = "../sa-token-plugin-ntex-v212", optional = true }
 
 [features]
 default = ["v212", "memory"]

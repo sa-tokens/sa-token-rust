@@ -3,9 +3,7 @@
 //! Token 管理器 - sa-token 的核心入口
 
 use std::sync::Arc;
-use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
-use tokio::sync::RwLock;
 use sa_token_adapter::storage::SaStorage;
 use crate::config::SaTokenConfig;
 use crate::error::{SaTokenError, SaTokenResult};
@@ -18,12 +16,10 @@ use crate::distributed::DistributedSessionManager;
 /// sa-token 管理器
 #[derive(Clone)]
 pub struct SaTokenManager {
+    /// 底层存储适配器
     pub(crate) storage: Arc<dyn SaStorage>,
+    /// 配置信息
     pub config: SaTokenConfig,
-    /// 用户权限映射 user_id -> permissions
-    pub(crate) user_permissions: Arc<RwLock<HashMap<String, Vec<String>>>>,
-    /// 用户角色映射 user_id -> roles
-    pub(crate) user_roles: Arc<RwLock<HashMap<String, Vec<String>>>>,
     /// 事件总线
     pub(crate) event_bus: SaTokenEventBus,
     /// 在线用户管理器
@@ -35,11 +31,9 @@ pub struct SaTokenManager {
 impl SaTokenManager {
     /// 创建新的管理器实例
     pub fn new(storage: Arc<dyn SaStorage>, config: SaTokenConfig) -> Self {
-        Self { 
-            storage, 
+        Self {
+            storage,
             config,
-            user_permissions: Arc::new(RwLock::new(HashMap::new())),
-            user_roles: Arc::new(RwLock::new(HashMap::new())),
             event_bus: SaTokenEventBus::new(),
             online_manager: None,
             distributed_manager: None,
@@ -200,7 +194,7 @@ impl SaTokenManager {
         }
         
         // 存储 token 信息
-        let key = format!("sa:token:{}", token.as_str());
+        let key = self.config.make_key("token:", token.as_str());
         let value = serde_json::to_string(&token_info)
             .map_err(SaTokenError::SerializationError)?;
         
@@ -211,9 +205,9 @@ impl SaTokenManager {
         // 如果 login_type 不为空，使用包含 login_type 的 key 格式避免冲突
         // If login_type is not empty, use key format with login_type to avoid conflicts
         let login_token_key = if !token_info.login_type.is_empty() && token_info.login_type != "default" {
-            format!("sa:login:token:{}:{}", login_id, token_info.login_type)
+            self.config.make_key("login:token:", &format!("{}:{}", login_id, token_info.login_type))
         } else {
-            format!("sa:login:token:{}", login_id)
+            self.config.make_key("login:token:", &login_id)
         };
         self.storage.set(&login_token_key, token.as_str(), self.config.timeout_duration()).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
@@ -236,7 +230,7 @@ impl SaTokenManager {
         tracing::debug!("Manager: 开始 logout，token: {}", token);
         
         // 先从存储获取 token 信息，用于触发事件（不调用 get_token_info 避免递归）
-        let key = format!("sa:token:{}", token.as_str());
+        let key = self.config.make_key("token:", token.as_str());
         tracing::debug!("Manager: 查询 token 信息，key: {}", key);
         
         let token_info_str = self.storage.get(&key).await
@@ -277,7 +271,7 @@ impl SaTokenManager {
     /// 根据登录 ID 登出所有 token
     pub async fn logout_by_login_id(&self, login_id: &str) -> SaTokenResult<()> {
         // 获取所有 token 键的前缀
-        let token_prefix = "sa:token:";
+        let token_prefix = format!("{}token:", self.config.key_prefix());
         
         // 获取所有 token 键
         if let Ok(keys) = self.storage.keys(&format!("{}*", token_prefix)).await {
@@ -306,7 +300,7 @@ impl SaTokenManager {
     
     /// 获取 token 信息
     pub async fn get_token_info(&self, token: &TokenValue) -> SaTokenResult<TokenInfo> {
-        let key = format!("sa:token:{}", token.as_str());
+        let key = self.config.make_key("token:", token.as_str());
         let value = self.storage.get(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
             .ok_or(SaTokenError::TokenNotFound)?;
@@ -344,7 +338,7 @@ impl SaTokenManager {
     
     /// 获取 session
     pub async fn get_session(&self, login_id: &str) -> SaTokenResult<SaSession> {
-        let key = format!("sa:session:{}", login_id);
+        let key = self.config.make_key("session:", login_id);
         let value = self.storage.get(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
         
@@ -359,7 +353,7 @@ impl SaTokenManager {
     
     /// 保存 session
     pub async fn save_session(&self, session: &SaSession) -> SaTokenResult<()> {
-        let key = format!("sa:session:{}", session.id);
+        let key = self.config.make_key("session:", &session.id);
         let value = serde_json::to_string(session)
             .map_err(SaTokenError::SerializationError)?;
         
@@ -371,7 +365,7 @@ impl SaTokenManager {
     
     /// 删除 session
     pub async fn delete_session(&self, login_id: &str) -> SaTokenResult<()> {
-        let key = format!("sa:session:{}", login_id);
+        let key = self.config.make_key("session:", login_id);
         self.storage.delete(&key).await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
         Ok(())
@@ -402,7 +396,7 @@ impl SaTokenManager {
         new_token_info.expire_time = Some(new_expire_time);
         
         // 保存更新后的 token 信息
-        let key = format!("sa:token:{}", token.as_str());
+        let key = self.config.make_key("token:", token.as_str());
         let value = serde_json::to_string(&new_token_info)
             .map_err(SaTokenError::SerializationError)?;
         
@@ -415,7 +409,7 @@ impl SaTokenManager {
     
     /// 踢人下线
     pub async fn kick_out(&self, login_id: &str) -> SaTokenResult<()> {
-        let token_result = self.storage.get(&format!("sa:login:token:{}", login_id)).await;
+        let token_result = self.storage.get(&self.config.make_key("login:token:", login_id)).await;
         
         if let Some(online_mgr) = &self.online_manager {
             let _ = online_mgr.kick_out_notify(login_id, "Account kicked out".to_string()).await;
@@ -430,5 +424,135 @@ impl SaTokenManager {
         }
         
         Ok(())
+    }
+}
+
+// ==================== 权限 / 角色持久化（基于 SaStorage） ====================
+
+impl SaTokenManager {
+    /// 构造权限存储键：{prefix}permission:{login_id}
+    fn permission_key(&self, login_id: &str) -> String {
+        self.config.make_key("permission:", login_id)
+    }
+
+    /// 构造角色存储键：{prefix}role:{login_id}
+    fn role_key(&self, login_id: &str) -> String {
+        self.config.make_key("role:", login_id)
+    }
+
+    /// 将字符串列表序列化为 JSON 并写入存储
+    /// 权限/角色无过期需求，TTL 固定使用 None（永久保存）
+    async fn save_string_list(&self, key: &str, list: &[String]) -> SaTokenResult<()> {
+        let value = serde_json::to_string(list).map_err(SaTokenError::SerializationError)?;
+        self.storage
+            .set(key, &value, None)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))
+    }
+
+    /// 从存储读取字符串列表
+    /// 键不存在时返回空 Vec（视为该用户无任何权限/角色）
+    async fn load_string_list(&self, key: &str) -> SaTokenResult<Vec<String>> {
+        match self
+            .storage
+            .get(key)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?
+        {
+            Some(value) => serde_json::from_str(&value).map_err(SaTokenError::SerializationError),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// 覆盖设置用户权限列表
+    /// 会完全替换该用户的所有权限
+    pub async fn set_permissions(&self, login_id: &str, permissions: Vec<String>) -> SaTokenResult<()> {
+        self.save_string_list(&self.permission_key(login_id), &permissions).await
+    }
+
+    /// 获取用户全部权限列表
+    /// 用户不存在或无权限时返回空列表
+    pub async fn get_permissions(&self, login_id: &str) -> SaTokenResult<Vec<String>> {
+        self.load_string_list(&self.permission_key(login_id)).await
+    }
+
+    /// 追加单个权限（已存在则跳过，避免重复）
+    /// 采用读-改-写模式，分布式高并发下存在竞态风险
+    pub async fn add_permission(&self, login_id: &str, permission: String) -> SaTokenResult<()> {
+        let key = self.permission_key(login_id);
+        let mut list = self.load_string_list(&key).await?;
+        if !list.contains(&permission) {
+            list.push(permission);
+            self.save_string_list(&key, &list).await?;
+        }
+        Ok(())
+    }
+
+    /// 移除用户的某个权限
+    /// 不存在时无操作，仅在确实删除了元素时才回写存储
+    pub async fn remove_permission(&self, login_id: &str, permission: &str) -> SaTokenResult<()> {
+        let key = self.permission_key(login_id);
+        let mut list = self.load_string_list(&key).await?;
+        let before = list.len();
+        list.retain(|p| p != permission);
+        if list.len() != before {
+            self.save_string_list(&key, &list).await?;
+        }
+        Ok(())
+    }
+
+    /// 清除用户的全部权限
+    /// 直接删除对应存储键
+    pub async fn clear_permissions(&self, login_id: &str) -> SaTokenResult<()> {
+        self.storage
+            .delete(&self.permission_key(login_id))
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))
+    }
+
+    /// 覆盖设置用户角色列表
+    /// 会完全替换该用户的所有角色
+    pub async fn set_roles(&self, login_id: &str, roles: Vec<String>) -> SaTokenResult<()> {
+        self.save_string_list(&self.role_key(login_id), &roles).await
+    }
+
+    /// 获取用户全部角色列表
+    /// 用户不存在或无角色时返回空列表
+    pub async fn get_roles(&self, login_id: &str) -> SaTokenResult<Vec<String>> {
+        self.load_string_list(&self.role_key(login_id)).await
+    }
+
+    /// 追加单个角色（已存在则跳过，避免重复）
+    /// 采用读-改-写模式，分布式高并发下存在竞态风险
+    pub async fn add_role(&self, login_id: &str, role: String) -> SaTokenResult<()> {
+        let key = self.role_key(login_id);
+        let mut list = self.load_string_list(&key).await?;
+        if !list.contains(&role) {
+            list.push(role);
+            self.save_string_list(&key, &list).await?;
+        }
+        Ok(())
+    }
+
+    /// 移除用户的某个角色
+    /// 不存在时无操作，仅在确实删除了元素时才回写存储
+    pub async fn remove_role(&self, login_id: &str, role: &str) -> SaTokenResult<()> {
+        let key = self.role_key(login_id);
+        let mut list = self.load_string_list(&key).await?;
+        let before = list.len();
+        list.retain(|r| r != role);
+        if list.len() != before {
+            self.save_string_list(&key, &list).await?;
+        }
+        Ok(())
+    }
+
+    /// 清除用户的全部角色
+    /// 直接删除对应存储键
+    pub async fn clear_roles(&self, login_id: &str) -> SaTokenResult<()> {
+        self.storage
+            .delete(&self.role_key(login_id))
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))
     }
 }

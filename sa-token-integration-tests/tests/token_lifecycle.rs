@@ -68,9 +68,8 @@ async fn test_random_128_length() {
         .build_config();
     let mgr = setup::fresh_manager_with_config(config);
     let token = mgr.login("user_1").await.expect("login");
-    // Note: current implementation caps at SHA-256 hex length (64 chars).
-    // The style name "Random128" refers to the intended 128-bit entropy level.
-    assert!(token.as_str().len() <= 64, "random token length should not exceed hex hash length");
+    // 当前实现基于 SHA-512（128 个十六进制字符），Random128 即取满 128 字符。
+    assert_eq!(token.as_str().len(), 128);
     assert!(!token.as_str().is_empty());
 }
 

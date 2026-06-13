@@ -285,7 +285,7 @@ impl SsoServer {
         
         // 如果会话存在，进一步验证 Token 是否有效
         if has_session {
-            let key = format!("sa:login:token:{}:sso", login_id);
+            let key = self.manager.config.make_key("login:token:", &format!("{}:sso", login_id));
             matches!(self.manager.storage.get(&key).await, Ok(Some(_)))
         } else {
             false
@@ -419,7 +419,7 @@ impl SsoServer {
 
         // 3. 从 Token 管理器中登出（登出所有类型的 Token）| Logout from Token manager (all token types)
         // 3.1 登出 SSO 服务端 Token
-        let sso_key = format!("sa:login:token:{}:sso", login_id);
+        let sso_key = self.manager.config.make_key("login:token:", &format!("{}:sso", login_id));
         let _ = self.manager.storage.delete(&sso_key).await;
         
         // 3.2 登出默认类型 Token
@@ -551,12 +551,12 @@ impl SsoClient {
     /// 是否已登录 | Whether logged in
     pub async fn check_local_login(&self, login_id: &str) -> bool {
         // 检查 SSO 客户端类型的登录
-        let key = format!("sa:login:token:{}:sso_client", login_id);
+        let key = self.manager.config.make_key("login:token:", &format!("{}:sso_client", login_id));
         match self.manager.storage.get(&key).await {
             Ok(Some(_)) => true,
             _ => {
                 // 兼容旧的无类型登录
-                let key_default = format!("sa:login:token:{}", login_id);
+                let key_default = self.manager.config.make_key("login:token:", login_id);
                 matches!(self.manager.storage.get(&key_default).await, Ok(Some(_)))
             }
         }
@@ -616,7 +616,7 @@ impl SsoClient {
         }
         
         // 2. 登出 SSO 客户端类型的 Token | Logout SSO client token
-        let sso_client_key = format!("sa:login:token:{}:sso_client", login_id);
+        let sso_client_key = self.manager.config.make_key("login:token:", &format!("{}:sso_client", login_id));
         let _ = self.manager.storage.delete(&sso_client_key).await;
         
         // 3. 登出默认类型的 Token（兼容）| Logout default token (compatibility)

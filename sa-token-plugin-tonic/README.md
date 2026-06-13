@@ -196,7 +196,7 @@ grpcurl -H "authorization: Bearer your-token-here" \
 
 ---
 
-## Breaking Change (0.1.16)
+## Breaking Change (0.1.17)
 
 - `get_login_id_from_request` 现在读取 `SaTokenLoginId` 类型（而非裸 `String`），必须先经 `SaTokenGrpcLayer` 或 `GrpcServerInterceptor` 校验写入
 - 如需原始 token，使用 `get_bearer_token_from_request`

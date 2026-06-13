@@ -22,3 +22,6 @@ axum-08 = { package = "axum", version = "0.8", default-features = false, feature
 tower-08 = { package = "tower", version = "0.5" }
 actix-web = "4"
 tonic = { version = "0.12" }
+
+[dev-dependencies]
+serial_test = "3"

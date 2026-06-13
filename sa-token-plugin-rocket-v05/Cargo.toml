@@ -8,14 +8,14 @@ repository.workspace = true
 description = "Rocket 0.5.x bindings for sa-token-rust"
 
 [dependencies]
-sa-token-plugin-rocket-core = { version = "0.1.16", path = "../sa-token-plugin-rocket-core" }
-sa-token-core = { version = "0.1.16", path = "../sa-token-core" }
-sa-token-adapter = { version = "0.1.16", path = "../sa-token-adapter" }
-sa-token-macro = { version = "0.1.16", path = "../sa-token-macro" }
+sa-token-plugin-rocket-core = { version = "0.1.17", path = "../sa-token-plugin-rocket-core" }
+sa-token-core = { version = "0.1.17", path = "../sa-token-core" }
+sa-token-adapter = { version = "0.1.17", path = "../sa-token-adapter" }
+sa-token-macro = { version = "0.1.17", path = "../sa-token-macro" }
 
-sa-token-storage-memory = { version = "0.1.16", path = "../sa-token-storage-memory", optional = true }
-sa-token-storage-redis = { version = "0.1.16", path = "../sa-token-storage-redis", optional = true }
-sa-token-storage-database = { version = "0.1.16", path = "../sa-token-storage-database", optional = true }
+sa-token-storage-memory = { version = "0.1.17", path = "../sa-token-storage-memory", optional = true }
+sa-token-storage-redis = { version = "0.1.17", path = "../sa-token-storage-redis", optional = true }
+sa-token-storage-database = { version = "0.1.17", path = "../sa-token-storage-database", optional = true }
 
 rocket = "0.5.1"
 tokio = { workspace = true }

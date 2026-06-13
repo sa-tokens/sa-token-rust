@@ -81,6 +81,11 @@ pub struct SaTokenConfig {
     
     /// Refresh Token 有效期（秒），默认 7 天
     pub refresh_token_timeout: i64,
+
+    /// 存储键前缀（用于 Redis/数据库等存储后端的键命名）
+    /// 默认 "sa:"，所有存储键将以此为前缀，如 "sa:token:"、"sa:session:" 等
+    /// 注意：此字段与 token_prefix（HTTP header 中的 Bearer 前缀）不同
+    pub storage_key_prefix: String,
 }
 
 impl Default for SaTokenConfig {
@@ -106,6 +111,7 @@ impl Default for SaTokenConfig {
             nonce_timeout: -1,
             enable_refresh_token: false,
             refresh_token_timeout: 604800, // 7 天
+            storage_key_prefix: "sa:".to_string(),
         }
     }
 }
@@ -121,6 +127,17 @@ impl SaTokenConfig {
         } else {
             Some(Duration::from_secs(self.timeout as u64))
         }
+    }
+
+    /// 构造存储键：拼接 storage_key_prefix 与后缀
+    /// 例如：make_key("token:", "abc123") → "sa:token:abc123"
+    pub fn make_key(&self, suffix: &str, id: &str) -> String {
+        format!("{}{}{}", self.storage_key_prefix, suffix, id)
+    }
+
+    /// 获取存储键前缀
+    pub fn key_prefix(&self) -> &str {
+        &self.storage_key_prefix
     }
 }
 
@@ -195,6 +212,15 @@ impl SaTokenConfigBuilder {
     
     pub fn token_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.config.token_prefix = Some(prefix.into());
+        self
+    }
+
+    /// 设置存储键前缀（默认 "sa:"）
+    ///
+    /// 注意：此字段与 token_prefix（HTTP header 中的 Bearer 前缀）不同
+    /// 此前缀用于 Redis/数据库等存储后端的键命名
+    pub fn storage_key_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.config.storage_key_prefix = prefix.into();
         self
     }
     

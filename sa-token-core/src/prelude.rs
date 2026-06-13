@@ -7,7 +7,7 @@ pub use crate::{
     NonceManager, RefreshTokenManager,
     WsAuthManager, WsAuthInfo, WsTokenExtractor, DefaultWsTokenExtractor,
     OnlineManager, OnlineUser, PushMessage, MessageType, MessagePusher, InMemoryPusher,
-    DistributedSessionManager, DistributedSession, DistributedSessionStorage, ServiceCredential, InMemoryDistributedStorage,
+    DistributedSessionManager, DistributedSession, DistributedSessionStorage, ServiceCredential, InMemoryDistributedStorage, SaStorageDistributedStorage,
     SsoServer, SsoClient, SsoManager, SsoTicket, SsoSession, SsoConfig,
     router::{
         match_path, match_any, need_auth, PathAuthConfig, AuthResult, process_auth, create_context,

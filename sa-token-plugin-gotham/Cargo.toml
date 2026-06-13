@@ -12,7 +12,7 @@ categories.workspace = true
 description = "Gotham framework integration for sa-token-rust (facade over versioned bindings)"
 
 [dependencies]
-sa-token-plugin-gotham-v074 = { version = "0.1.16", path = "../sa-token-plugin-gotham-v074", optional = true }
+sa-token-plugin-gotham-v074 = { version = "0.1.17", path = "../sa-token-plugin-gotham-v074", optional = true }
 
 [features]
 default = ["v074", "memory"]

@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         created_at: Utc::now(),
         permissions: vec!["read".to_string(), "write".to_string()],
     };
-    dist_manager.register_service(service1.clone()).await;
+    dist_manager.register_service(service1.clone()).await?;
     println!("   Registered: {} ({})", service1.service_name, service1.service_id);
     
     let service2 = ServiceCredential {
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         created_at: Utc::now(),
         permissions: vec!["read".to_string()],
     };
-    dist_manager.register_service(service2.clone()).await;
+    dist_manager.register_service(service2.clone()).await?;
     println!("   Registered: {} ({})\n", service2.service_name, service2.service_id);
 
     println!("2. Service Authentication");
