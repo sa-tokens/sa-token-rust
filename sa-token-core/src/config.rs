@@ -18,11 +18,14 @@ pub struct SaTokenConfig {
     pub timeout: i64,
     
     /// Token 最低活跃频率（秒），-1 表示不限制
-    /// 
-    /// 配合 auto_renew 使用时，表示自动续签的时长
+    ///
+    /// 超过该间隔未活跃则 token 冻结（`TokenInactive`）；配合 `auto_renew` 时亦用于续签时长。
     pub active_timeout: i64,
+
+    /// 是否启用 per-token 动态 active_timeout（对齐 Java dynamicActiveTimeout，Phase2 完善）
+    pub dynamic_active_timeout: bool,
     
-    /// 是否开启自动续签（默认 false）
+    /// 是否开启自动续签（默认 true，对齐 Java SaTokenConfig）
     /// 
     /// 如果设置为 true，在以下场景会自动续签 token：
     /// - 调用 get_token_info() 时
@@ -37,7 +40,7 @@ pub struct SaTokenConfig {
     /// 是否允许同一账号并发登录
     pub is_concurrent: bool,
     
-    /// 在多人登录同一账号时，是否共享一个 token
+    /// 在多人登录同一账号时，是否共享一个 token（默认 false，对齐 Java）
     pub is_share: bool,
     
     /// Token 风格（uuid、simple-uuid、random-32、random-64、random-128）
@@ -55,9 +58,6 @@ pub struct SaTokenConfig {
     /// 是否从请求体中读取 token
     pub is_read_body: bool,
     
-    /// token 前缀（例如 "Bearer "）
-    pub token_prefix: Option<String>,
-    
     /// JWT 密钥（如果使用 JWT）
     pub jwt_secret_key: Option<String>,
     
@@ -69,6 +69,9 @@ pub struct SaTokenConfig {
     
     /// JWT 受众
     pub jwt_audience: Option<String>,
+
+    /// JWT 生成失败时是否回退为 UUID（默认 true）；失败时始终 `tracing::warn`
+    pub jwt_fallback_on_error: bool,
     
     /// 是否启用防重放攻击（nonce 机制）
     pub enable_nonce: bool,
@@ -86,6 +89,30 @@ pub struct SaTokenConfig {
     /// 默认 "sa:"，所有存储键将以此为前缀，如 "sa:token:"、"sa:session:" 等
     /// 注意：此字段与 token_prefix（HTTP header 中的 Bearer 前缀）不同
     pub storage_key_prefix: String,
+
+    /// 同一账号最大登录数量，-1 表示不限制
+    pub max_login_count: i64,
+
+    /// 超出 max_login_count 时的下线模式
+    pub overflow_logout_mode: LogoutMode,
+
+    /// 非并发顶号时：踢旧设备还是拒绝新登录
+    pub replaced_login_exit_mode: ReplacedLoginExitMode,
+
+    /// 顶号范围：当前设备类型或全部设备
+    pub replaced_range: ReplacedRange,
+
+    /// 登录时是否立即创建 Token-Session
+    pub right_now_create_token_session: bool,
+
+    /// 获取 Token-Session 时是否校验 token 登录态
+    pub token_session_check_login: bool,
+
+    /// 默认 logout 范围（预留）
+    pub logout_range: LogoutRange,
+
+    /// logout 时是否保留 Token-Session
+    pub is_logout_keep_token_session: bool,
 }
 
 impl Default for SaTokenConfig {
@@ -94,24 +121,33 @@ impl Default for SaTokenConfig {
             token_name: "sa-token".to_string(),
             timeout: 2592000, // 30天
             active_timeout: -1,
-            auto_renew: false, // 默认不开启自动续签
+            dynamic_active_timeout: false,
+            auto_renew: true,
             is_concurrent: true,
-            is_share: true,
+            is_share: false,
             token_style: TokenStyle::Uuid,
             is_log: false,
             is_read_cookie: true,
             is_read_header: true,
-            is_read_body: false,
-            token_prefix: None,
+            is_read_body: true,
             jwt_secret_key: None,
             jwt_algorithm: Some("HS256".to_string()),
             jwt_issuer: None,
             jwt_audience: None,
+            jwt_fallback_on_error: true,
             enable_nonce: false,
             nonce_timeout: -1,
             enable_refresh_token: false,
             refresh_token_timeout: 604800, // 7 天
             storage_key_prefix: "sa:".to_string(),
+            max_login_count: -1,
+            overflow_logout_mode: LogoutMode::Logout,
+            replaced_login_exit_mode: ReplacedLoginExitMode::OldDevice,
+            replaced_range: ReplacedRange::CurrDeviceType,
+            right_now_create_token_session: false,
+            token_session_check_login: true,
+            logout_range: LogoutRange::Token,
+            is_logout_keep_token_session: false,
         }
     }
 }
@@ -164,6 +200,39 @@ pub enum TokenStyle {
     Tik,
 }
 
+/// 下线模式（对齐 Java SaLogoutMode）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LogoutMode {
+    #[default]
+    Logout,
+    KickOut,
+    Replaced,
+}
+
+/// 非并发顶号时踢旧或拒新
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ReplacedLoginExitMode {
+    #[default]
+    OldDevice,
+    NewDevice,
+}
+
+/// 顶号影响范围
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ReplacedRange {
+    #[default]
+    CurrDeviceType,
+    AllDeviceType,
+}
+
+/// logout 范围（预留）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LogoutRange {
+    #[default]
+    Token,
+    Account,
+}
+
 /// 配置构建器
 #[derive(Default)]
 pub struct SaTokenConfigBuilder {
@@ -188,6 +257,12 @@ impl SaTokenConfigBuilder {
         self.config.active_timeout = timeout;
         self
     }
+
+    /// 设置是否启用 per-token 动态 active_timeout
+    pub fn dynamic_active_timeout(mut self, enabled: bool) -> Self {
+        self.config.dynamic_active_timeout = enabled;
+        self
+    }
     
     /// 设置是否开启自动续签
     pub fn auto_renew(mut self, enabled: bool) -> Self {
@@ -209,11 +284,7 @@ impl SaTokenConfigBuilder {
         self.config.token_style = style;
         self
     }
-    
-    pub fn token_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.config.token_prefix = Some(prefix.into());
-        self
-    }
+
 
     /// 设置存储键前缀（默认 "sa:"）
     ///
@@ -246,6 +317,11 @@ impl SaTokenConfigBuilder {
         self.config.jwt_audience = Some(audience.into());
         self
     }
+
+    pub fn jwt_fallback_on_error(mut self, fallback: bool) -> Self {
+        self.config.jwt_fallback_on_error = fallback;
+        self
+    }
     
     /// 启用防重放攻击（nonce 机制）
     pub fn enable_nonce(mut self, enable: bool) -> Self {
@@ -268,6 +344,46 @@ impl SaTokenConfigBuilder {
     /// 设置 Refresh Token 有效期（秒）
     pub fn refresh_token_timeout(mut self, timeout: i64) -> Self {
         self.config.refresh_token_timeout = timeout;
+        self
+    }
+
+    pub fn max_login_count(mut self, count: i64) -> Self {
+        self.config.max_login_count = count;
+        self
+    }
+
+    pub fn overflow_logout_mode(mut self, mode: LogoutMode) -> Self {
+        self.config.overflow_logout_mode = mode;
+        self
+    }
+
+    pub fn replaced_login_exit_mode(mut self, mode: ReplacedLoginExitMode) -> Self {
+        self.config.replaced_login_exit_mode = mode;
+        self
+    }
+
+    pub fn replaced_range(mut self, range: ReplacedRange) -> Self {
+        self.config.replaced_range = range;
+        self
+    }
+
+    pub fn right_now_create_token_session(mut self, enabled: bool) -> Self {
+        self.config.right_now_create_token_session = enabled;
+        self
+    }
+
+    pub fn token_session_check_login(mut self, enabled: bool) -> Self {
+        self.config.token_session_check_login = enabled;
+        self
+    }
+
+    pub fn logout_range(mut self, range: LogoutRange) -> Self {
+        self.config.logout_range = range;
+        self
+    }
+
+    pub fn is_logout_keep_token_session(mut self, keep: bool) -> Self {
+        self.config.is_logout_keep_token_session = keep;
         self
     }
     

@@ -9,4 +9,7 @@ pub mod check_permissions_and;
 pub mod check_permissions_or;
 pub mod check_roles_and;
 pub mod check_roles_or;
+pub mod check_safe;
+pub mod check_disable;
+pub mod check_or;
 pub mod ignore;

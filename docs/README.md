@@ -10,7 +10,7 @@ Welcome to **sa-token-rust** documentation! All documentation is available in bo
 
 ## 🚀 Quick Start
 
-Use **release 0.1.13**. Add exactly **one** `sa-token-plugin-*` crate for your web stack.
+Use **release 0.1.18**. Add exactly **one** `sa-token-plugin-*` crate for your web stack.
 
 | Kind | Crate | Default framework feature |
 |------|--------|---------------------------|
@@ -44,7 +44,7 @@ Complete walkthrough → [Main README — Quick Start](../README.md#-quick-start
 
 | Document | Description |
 |----------|-------------|
-| **Quick Start (this page)** | Framework table, façade vs integrated crates, 0.1.13 |
+| **Quick Start (this page)** | Framework table, façade vs integrated crates, 0.1.18 |
 | [Main README](../README.md) | Complete project overview and quick start |
 | [Simplified Usage](../README.md#-simplified-usage-recommended) | One-line import, all features included |
 | [Architecture Overview](../README.md#-architecture) | Project structure and design |
@@ -57,6 +57,7 @@ Complete walkthrough → [Main README — Quick Start](../README.md#-quick-start
 |----------|---------|------|-------------|
 | **StpUtil API Reference** | [StpUtil.md](./StpUtil.md) | [StpUtil_zh-CN.md](./StpUtil_zh-CN.md) | Complete guide to the StpUtil utility class |
 | **Permission Matching Rules** | [PermissionMatching.md](./PermissionMatching.md#english) | [PermissionMatching.md](./PermissionMatching.md#中文) | Permission checking and wildcard matching |
+| **Multi-Account & Terminal** | [MULTI_ACCOUNT_TERMINAL.md](./MULTI_ACCOUNT_TERMINAL.md#english) | [MULTI_ACCOUNT_TERMINAL.md](./MULTI_ACCOUNT_TERMINAL.md#中文) | Multi-`login_type` isolation (`SaLogic`) and per-device terminal tracking (`SaTerminalInfo`) |
 
 ---
 
@@ -136,13 +137,13 @@ cargo run --example distributed_session_example
 | **Gotham** | `sa-token-plugin-gotham` | Façade; default **`v074`** |
 | **Ntex** | `sa-token-plugin-ntex` | Façade; default **`v212`** |
 
-**Dependency examples (0.1.13):**
+**Dependency examples (0.1.18):**
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.13"
-# sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
-# sa-token-plugin-rocket = "0.1.13"
+sa-token-plugin-axum = "0.1.18"
+# sa-token-plugin-actix-web = { version = "0.1.18", features = ["redis"] }
+# sa-token-plugin-rocket = "0.1.18"
 ```
 
 ```rust
@@ -197,6 +198,7 @@ See the **Quick Start** section above and [Main README — Quick Start](../READM
 - **WebSocket**: Authenticate WebSocket connections with multiple token sources
 - **Online Users**: Real-time tracking and message push
 - **Distributed Session**: Cross-service session sharing for microservices
+- **Persisted authorization (0.1.18)**: permissions & roles are stored in `SaStorage`, so they survive restarts and are shared across nodes — see [main README → Token Configuration](../README.md#token-configuration)
 
 ### Storage Options
 
@@ -206,8 +208,13 @@ See the **Quick Start** section above and [Main README — Quick Start](../READM
 
 **Easy switch with features:**
 ```toml
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 ```
+
+**Configurable key prefix (0.1.18):** every storage key is prefixed with
+`SaTokenConfig::storage_key_prefix` (default `"sa:"`), useful for multi-tenant setups or sharing one
+Redis instance. Configure via `SaTokenConfig::builder().storage_key_prefix("myapp:")` — see the
+[full configuration reference](../README.md#token-configuration).
 
 ---
 
@@ -224,6 +231,7 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 - **Real-time features?** → [Online User Management](./ONLINE_USER_MANAGEMENT.md)
 - **Microservices?** → [Distributed Session](./DISTRIBUTED_SESSION.md)
 - **Single Sign-On?** → [SSO Guide](./SSO_GUIDE.md#english)
+- **Multiple account systems / devices?** → [Multi-Account & Terminal Guide](./MULTI_ACCOUNT_TERMINAL.md#english)
 - **Error codes?** → [Error Reference](./ERROR_REFERENCE.md)
 - **Code examples?** → [Examples Directory](../examples/)
 

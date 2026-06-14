@@ -774,6 +774,6 @@ cargo run --example sso_example
 
 ---
 
-**Version**: 0.1.13  
+**Version**: 0.1.18  
 **Last Updated**: 2025-01-15
 

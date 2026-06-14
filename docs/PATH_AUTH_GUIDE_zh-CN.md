@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-**依赖（0.1.13）：** Actix-web 使用门面 crate **`sa-token-plugin-actix-web`**（默认 **`v4`** + **`memory`**）。存储切换方式见 [主 README](../README_zh-CN.md#-快速开始)。
+**依赖（0.1.18）：** Actix-web 使用门面 crate **`sa-token-plugin-actix-web`**（默认 **`v4`** + **`memory`**）。存储切换方式见 [主 README](../README_zh-CN.md#-快速开始)。
 
 ### 基本用法
 

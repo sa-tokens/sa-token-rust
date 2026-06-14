@@ -16,14 +16,15 @@ async fn test_default_config_values() {
     assert_eq!(config.token_name, "sa-token");
     assert_eq!(config.timeout, 2592000);
     assert_eq!(config.active_timeout, -1);
-    assert!(!config.auto_renew);
+    assert!(config.auto_renew);
     assert!(config.is_concurrent);
-    assert!(config.is_share);
+    assert!(!config.is_share);
+    assert!(!config.dynamic_active_timeout);
     assert!(matches!(config.token_style, TokenStyle::Uuid));
     assert!(!config.is_log);
     assert!(config.is_read_cookie);
     assert!(config.is_read_header);
-    assert!(!config.is_read_body);
+    assert!(config.is_read_body);
     assert!(config.token_prefix.is_none());
     assert!(config.jwt_secret_key.is_none());
     assert_eq!(config.jwt_algorithm.as_deref(), Some("HS256"));

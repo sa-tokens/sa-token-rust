@@ -136,3 +136,52 @@ async fn test_logout_unknown_user_returns_empty() {
     let clients = server.logout("unknown_user").await.expect("logout");
     assert!(clients.is_empty());
 }
+
+#[tokio::test]
+async fn test_check_ticket_returns_remain_seconds() {
+    let mgr = sso_manager();
+    let server = sso_server(mgr.clone());
+    let ticket = server
+        .login("user_chk".to_string(), "http://app1.example.com".to_string())
+        .await
+        .expect("login");
+    let result = server
+        .check_ticket(&ticket.ticket_id, "http://app1.example.com")
+        .await
+        .expect("check_ticket");
+    assert_eq!(result.login_id, "user_chk");
+    assert!(result.remain_seconds > 0);
+    // check_ticket 不消费，仍可 validate
+    server
+        .validate_ticket(&ticket.ticket_id, "http://app1.example.com")
+        .await
+        .expect("validate after check");
+}
+
+#[tokio::test]
+async fn test_logout_with_slo_returns_logout_urls() {
+    let mgr = sso_manager();
+    let server = sso_server(mgr.clone());
+    server
+        .login("user_slo".to_string(), "http://app1.example.com".to_string())
+        .await
+        .expect("login");
+    let urls = server.logout_with_slo("user_slo").await.expect("slo");
+    assert_eq!(urls.len(), 1);
+    assert!(urls[0].contains("sso/logout"));
+    assert!(urls[0].contains("slo=1"));
+}
+
+#[tokio::test]
+async fn test_create_ticket_rejects_disallowed_origin() {
+    let mgr = sso_manager();
+    let config = sa_token_core::SsoConfig::builder()
+        .allow_cross_domain(true)
+        .allowed_origins(vec!["http://allowed.example.com".to_string()])
+        .build();
+    let server = sso_server(mgr).with_config(&config);
+    let result = server
+        .create_ticket("u1".to_string(), "http://evil.example.com".to_string())
+        .await;
+    assert!(matches!(result, Err(SaTokenError::ServiceMismatch)));
+}

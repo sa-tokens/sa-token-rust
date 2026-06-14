@@ -35,6 +35,11 @@ pub mod online;
 pub mod distributed;
 pub mod sso;
 pub mod router;
+pub mod disable;
+pub mod safe;
+pub mod token_session;
+pub mod stp_interface;
+pub mod stp_logic;
 pub mod prelude;
 
 pub mod error;
@@ -42,13 +47,16 @@ mod manager;
 
 pub use error::{SaTokenError, SaTokenResult};
 pub use manager::SaTokenManager;
-pub use config::SaTokenConfig;
+pub use config::{SaTokenConfig, LogoutMode, ReplacedLoginExitMode, ReplacedRange, LogoutRange};
+pub use stp_interface::StpInterface;
 pub use util::{StpUtil, LoginId};
 pub use context::SaTokenContext;
 
 // 重新导出核心类型
 pub use token::{TokenInfo, TokenValue, JwtManager, JwtClaims, JwtAlgorithm};
 pub use session::SaSession;
+pub use session::SaTerminalInfo;
+pub use stp_logic::SaLogic;
 pub use permission::{PermissionChecker, RoleChecker};
 pub use event::{
     SaTokenEvent, SaTokenEventType, SaTokenListener, 
@@ -63,8 +71,12 @@ pub use distributed::{
     DistributedSessionManager, DistributedSession, DistributedSessionStorage,
     ServiceCredential, InMemoryDistributedStorage, SaStorageDistributedStorage
 };
+pub use disable::{
+    DEFAULT_DISABLE_SERVICE, MIN_DISABLE_LEVEL, NOT_DISABLE_LEVEL, DEFAULT_DISABLE_LEVEL,
+};
+pub use safe::{DEFAULT_SAFE_SERVICE, SAFE_AUTH_VALUE};
 pub use sso::{
-    SsoServer, SsoClient, SsoManager, SsoTicket, SsoSession, SsoConfig
+    SsoServer, SsoClient, SsoManager, SsoTicket, SsoSession, SsoConfig, CheckTicketResult,
 };
 pub use router::{
     match_path, match_any, need_auth, PathAuthConfig, extract_token, run_auth_flow, AuthFlowResult,

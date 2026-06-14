@@ -819,6 +819,97 @@ impl OAuth2Manager {
     pub fn validate_scope(&self, client: &OAuth2Client, requested_scope: &[String]) -> bool {
         requested_scope.iter().all(|s| client.scope.contains(s))
     }
+
+    /// 客户端是否支持指定 grant_type
+    pub fn supports_grant_type(client: &OAuth2Client, grant_type: &str) -> bool {
+        client.grant_types.iter().any(|g| g == grant_type)
+    }
+
+    /// Resource Owner Password Credentials Grant
+    ///
+    /// 密码校验应由业务层完成后再调用；此处以 `username` 作为 `user_id` 签发令牌。
+    pub async fn password_grant(
+        &self,
+        client_id: &str,
+        client_secret: &str,
+        username: &str,
+        _password: &str,
+        scope: Vec<String>,
+    ) -> SaTokenResult<AccessToken> {
+        let client = self.get_client(client_id).await?;
+        if !Self::supports_grant_type(&client, "password") {
+            return Err(SaTokenError::OAuth2InvalidCredentials);
+        }
+        if !self.verify_client(client_id, client_secret).await? {
+            return Err(SaTokenError::OAuth2InvalidCredentials);
+        }
+        if !self.validate_scope(&client, &scope) {
+            return Err(SaTokenError::OAuth2InvalidScope);
+        }
+        self.generate_access_token(client_id, username, scope).await
+    }
+
+    /// Client Credentials Grant（以 client_id 作为 subject）
+    pub async fn client_credentials_grant(
+        &self,
+        client_id: &str,
+        client_secret: &str,
+        scope: Vec<String>,
+    ) -> SaTokenResult<AccessToken> {
+        let client = self.get_client(client_id).await?;
+        if !Self::supports_grant_type(&client, "client_credentials") {
+            return Err(SaTokenError::OAuth2InvalidCredentials);
+        }
+        if !self.verify_client(client_id, client_secret).await? {
+            return Err(SaTokenError::OAuth2InvalidCredentials);
+        }
+        if !self.validate_scope(&client, &scope) {
+            return Err(SaTokenError::OAuth2InvalidScope);
+        }
+        let subject = format!("client:{}", client_id);
+        self.generate_access_token(client_id, &subject, scope).await
+    }
+
+    /// 按 grant_type 分发令牌请求
+    ///
+    /// OAuth2 刷新与 Sa-Token [`RefreshTokenManager`] 职责分离：本模块仅管理 `oauth2:refresh:*` 键。
+    pub async fn issue_token(
+        &self,
+        grant_type: &str,
+        client_id: &str,
+        client_secret: &str,
+        code: Option<&str>,
+        redirect_uri: Option<&str>,
+        refresh_token: Option<&str>,
+        username: Option<&str>,
+        password: Option<&str>,
+        scope: Vec<String>,
+    ) -> SaTokenResult<AccessToken> {
+        match grant_type {
+            "authorization_code" => {
+                let code = code.ok_or(SaTokenError::OAuth2CodeNotFound)?;
+                let redirect_uri = redirect_uri.ok_or(SaTokenError::OAuth2RedirectUriMismatch)?;
+                self.exchange_code_for_token(code, client_id, client_secret, redirect_uri)
+                    .await
+            }
+            "refresh_token" => {
+                let refresh = refresh_token.ok_or(SaTokenError::OAuth2RefreshTokenNotFound)?;
+                self.refresh_access_token(refresh, client_id, client_secret)
+                    .await
+            }
+            "password" => {
+                let username = username.ok_or(SaTokenError::OAuth2InvalidCredentials)?;
+                let password = password.ok_or(SaTokenError::OAuth2InvalidCredentials)?;
+                self.password_grant(client_id, client_secret, username, password, scope)
+                    .await
+            }
+            "client_credentials" => {
+                self.client_credentials_grant(client_id, client_secret, scope)
+                    .await
+            }
+            _ => Err(SaTokenError::OAuth2InvalidCredentials),
+        }
+    }
 }
 
 #[cfg(test)]

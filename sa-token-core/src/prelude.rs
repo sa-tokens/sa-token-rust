@@ -1,6 +1,6 @@
 pub use crate::{
     SaTokenManager, StpUtil, SaTokenConfig, SaTokenError, SaTokenResult, SaTokenContext,
-    TokenValue, TokenInfo, SaSession, PermissionChecker, LoginId,
+    TokenValue, TokenInfo, SaSession, SaTerminalInfo, SaLogic, PermissionChecker, LoginId,
     SaTokenEvent, SaTokenEventType, SaTokenListener, SaTokenEventBus, LoggingListener,
     JwtManager, JwtClaims, JwtAlgorithm,
     OAuth2Manager, OAuth2Client, AuthorizationCode, AccessToken, OAuth2TokenInfo,

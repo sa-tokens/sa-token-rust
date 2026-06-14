@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         created_at: Utc::now(),
         permissions: vec!["read".to_string(), "write".to_string()],
     };
-    manager.register_service(credential).await;
+    manager.register_service(credential).await?; // returns Result<(), SaTokenError> since 0.1.18
     
     // Verify service
     let verified = manager.verify_service("api-gateway", "secret123").await?;
@@ -143,7 +143,7 @@ Service B accesses session:
 
 **Methods:**
 - `new(storage, service_id, timeout)` - Create manager
-- `register_service(credential)` - Register a service
+- `register_service(credential)` - Register a service. **Since 0.1.18 returns `Result<(), SaTokenError>`** (credentials are persisted to storage, no longer kept in an in-memory map)
 - `verify_service(id, secret)` - Verify service credentials
 - `create_session(login_id, token)` - Create new session
 - `get_session(session_id)` - Get session by ID
@@ -227,7 +227,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         created_at: Utc::now(),
         permissions: vec!["read".to_string(), "write".to_string()],
     };
-    manager.register_service(credential).await;
+    manager.register_service(credential).await?; // 0.1.18 起返回 Result<(), SaTokenError>
     
     // 验证服务
     let verified = manager.verify_service("api-gateway", "secret123").await?;
@@ -453,7 +453,41 @@ Maintain session consistency across multiple server instances.
 
 ## Storage Backends
 
-### Redis Implementation (Recommended)
+### Built-in `SaStorageDistributedStorage` (Recommended, since 0.1.18)
+
+Instead of hand-writing a backend, reuse the same `SaStorage` your `SaTokenManager` already uses.
+`SaStorageDistributedStorage` persists distributed sessions, the per-user login index, and service
+credentials, honoring the configured `storage_key_prefix`:
+
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use sa_token_core::{DistributedSessionManager, SaStorageDistributedStorage};
+
+// `storage` is any Arc<dyn SaStorage> (memory, Redis, database, …);
+// pass the same key prefix as your SaTokenConfig to keep keys consistent.
+let dist_storage = Arc::new(SaStorageDistributedStorage::new(
+    storage.clone(),
+    config.storage_key_prefix.clone(), // e.g. "sa:"
+));
+
+let manager = DistributedSessionManager::new(
+    dist_storage,
+    "service-main".to_string(),
+    Duration::from_secs(3600),
+);
+```
+
+Key layout (with default prefix `sa:`): `sa:dsession:{session_id}`,
+`sa:dsession:index:{login_id}`, `sa:dservice:{service_id}`.
+
+### Implementing a custom backend
+
+The `DistributedSessionStorage` trait has **six** methods (since 0.1.18 it also persists service
+credentials): `save_session`, `get_session`, `delete_session`, `get_sessions_by_login_id`,
+**`save_credential`**, and **`get_credential`**. Custom implementations must provide all six.
+
+### Redis Implementation
 
 ```rust
 use redis::AsyncCommands;
@@ -540,7 +574,7 @@ let credential = ServiceCredential {
     created_at: Utc::now(),
     permissions: vec!["user.read".to_string(), "user.write".to_string()],
 };
-manager.register_service(credential).await;
+manager.register_service(credential).await?; // returns Result since 0.1.18
 ```
 
 ### 2. Session Creation with Context

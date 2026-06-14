@@ -342,3 +342,76 @@ async fn test_refresh_with_nonexistent_token() {
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), SaTokenError::OAuth2RefreshTokenNotFound));
 }
+
+#[tokio::test]
+async fn test_password_grant() {
+    let mgr = oauth2_mgr();
+    let mut client = test_client();
+    client.grant_types.push("password".to_string());
+    mgr.register_client(&client).await.expect("register");
+    let token = mgr
+        .password_grant("app_001", "secret_001", "user_pwd", "any", vec!["read".into()])
+        .await
+        .expect("password grant");
+    let info = mgr.verify_access_token(&token.access_token).await.expect("verify");
+    assert_eq!(info.user_id, "user_pwd");
+}
+
+#[tokio::test]
+async fn test_client_credentials_grant() {
+    let mgr = oauth2_mgr();
+    let mut client = test_client();
+    client.grant_types.push("client_credentials".to_string());
+    mgr.register_client(&client).await.expect("register");
+    let token = mgr
+        .client_credentials_grant("app_001", "secret_001", vec!["read".into()])
+        .await
+        .expect("client_credentials");
+    let info = mgr.verify_access_token(&token.access_token).await.expect("verify");
+    assert_eq!(info.user_id, "client:app_001");
+}
+
+#[tokio::test]
+async fn test_issue_token_dispatches_grants() {
+    let mgr = oauth2_mgr();
+    let mut client = test_client();
+    client.grant_types = vec![
+        "authorization_code".into(),
+        "refresh_token".into(),
+        "password".into(),
+        "client_credentials".into(),
+    ];
+    mgr.register_client(&client).await.expect("register");
+
+    let cc = mgr
+        .issue_token(
+            "client_credentials",
+            "app_001",
+            "secret_001",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec!["read".into()],
+        )
+        .await
+        .expect("issue client_credentials");
+    assert!(!cc.access_token.is_empty());
+
+    let pwd = mgr
+        .issue_token(
+            "password",
+            "app_001",
+            "secret_001",
+            None,
+            None,
+            None,
+            Some("user_x"),
+            Some("pwd"),
+            vec!["read".into()],
+        )
+        .await
+        .expect("issue password");
+    assert!(!pwd.access_token.is_empty());
+}

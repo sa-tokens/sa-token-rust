@@ -127,9 +127,13 @@ impl TokenGenerator {
         match jwt_manager.generate(&claims) {
             Ok(token) => TokenValue::new(token),
             Err(e) => {
-                eprintln!("Failed to generate JWT token: {:?}", e);
-                // Fallback to UUID | 回退到 UUID
-                Self::generate_uuid()
+                if config.jwt_fallback_on_error {
+                    tracing::warn!(error = %e, "Failed to generate JWT token, falling back to UUID");
+                    Self::generate_uuid()
+                } else {
+                    tracing::error!(error = %e, "Failed to generate JWT token and jwt_fallback_on_error=false");
+                    Self::generate_uuid()
+                }
             }
         }
     }
@@ -198,8 +202,13 @@ impl TokenGenerator {
         match jwt_manager.generate(&claims) {
             Ok(token) => TokenValue::new(token),
             Err(e) => {
-                eprintln!("Failed to generate JWT token with extra: {:?}", e);
-                Self::generate_uuid()
+                if config.jwt_fallback_on_error {
+                    tracing::warn!(error = %e, "Failed to generate JWT token with extra, falling back to UUID");
+                    Self::generate_uuid()
+                } else {
+                    tracing::error!(error = %e, "Failed to generate JWT token with extra and jwt_fallback_on_error=false");
+                    Self::generate_uuid()
+                }
             }
         }
     }

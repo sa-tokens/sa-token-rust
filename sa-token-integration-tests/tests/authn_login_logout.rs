@@ -71,22 +71,19 @@ async fn test_is_concurrent_multiple_logins_produce_different_tokens() {
 
 #[tokio::test]
 async fn test_non_concurrent_mode_kicks_previous_sessions() {
-    // is_concurrent=false: second login should invalidate the first token.
-    // However, due to the current implementation ordering (logout_by_login_id
-    // runs AFTER the new token is stored), the new token may also be deleted.
-    // This is a known bug — see SaTokenManager::login_with_token_info.
     let config = sa_token_core::SaTokenConfig::builder()
         .timeout(3600)
         .token_style(sa_token_core::config::TokenStyle::Uuid)
         .is_concurrent(false)
         .is_share(false)
+        .auto_renew(false)
         .build_config();
     let mgr = setup::fresh_manager_with_config(config);
-    let _t1 = mgr.login("user_1").await.expect("first login");
-    // Second login succeeds (returns a token) but the token may already
-    // be invalid due to the logout ordering issue.
-    let _ = mgr.login("user_1").await.expect("second login");
-    // Accept either behavior for now — the test documents the current state.
+    let t1 = mgr.login("user_1").await.expect("first login");
+    assert!(mgr.is_valid(&t1).await, "first token should be valid after first login");
+    let t2 = mgr.login("user_1").await.expect("second login");
+    assert!(!mgr.is_valid(&t1).await, "old token should be invalid after non-concurrent re-login");
+    assert!(mgr.is_valid(&t2).await, "new token should be valid after non-concurrent re-login");
 }
 
 #[tokio::test]
@@ -144,6 +141,29 @@ async fn test_get_token_info_returns_login_id() {
     let token = mgr.login("user_42").await.expect("login");
     let info = mgr.get_token_info(&token).await.expect("token info");
     assert_eq!(info.login_id, "user_42");
+}
+
+#[tokio::test]
+async fn test_stp_util_login_with_type_sets_login_type() {
+    init();
+    let token = StpUtil::login_with_type("user_admin", "admin")
+        .await
+        .expect("login_with_type");
+    let info = StpUtil::get_token_info(&token).await.expect("token info");
+    assert_eq!(info.login_type, "admin");
+}
+
+#[tokio::test]
+async fn test_get_all_tokens_by_login_id_after_concurrent_logins() {
+    init();
+    let t1 = StpUtil::login("user_multi").await.expect("login 1");
+    let t2 = StpUtil::login("user_multi").await.expect("login 2");
+    let tokens = StpUtil::get_all_tokens_by_login_id("user_multi")
+        .await
+        .expect("tokens");
+    assert_eq!(tokens.len(), 2);
+    assert!(tokens.iter().any(|t| t.as_str() == t1.as_str()));
+    assert!(tokens.iter().any(|t| t.as_str() == t2.as_str()));
 }
 
 // ── Success cases: StpUtil-based ──────────────────────────────────────────

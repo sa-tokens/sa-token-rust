@@ -10,7 +10,7 @@ English | [中文文档](./README_zh-CN.md)
 
 ## 🚀 快速开始
 
-使用 **0.1.13** 版本。按你的 Web 框架只添加 **一个** `sa-token-plugin-*` 依赖。
+使用 **0.1.18** 版本。按你的 Web 框架只添加 **一个** `sa-token-plugin-*` 依赖。
 
 | 类型 | Crate | 默认框架 feature |
 |------|--------|------------------|
@@ -44,7 +44,7 @@ use sa_token_plugin_axum::*;          // Axum — 或 sa_token_plugin_actix_web 
 
 | 文档 | 说明 |
 |----------|-------------|
-| **本页「快速开始」** | 框架对照表、门面与一体化 crate、0.1.13 |
+| **本页「快速开始」** | 框架对照表、门面与一体化 crate、0.1.18 |
 | [主 README](../README_zh-CN.md) | 完整的项目概述和快速开始 |
 | [简化使用方式](../README_zh-CN.md#-简化使用方式推荐) | 一行导入，包含所有功能 |
 | [架构概览](../README_zh-CN.md#-架构) | 项目结构和设计 |
@@ -57,6 +57,7 @@ use sa_token_plugin_axum::*;          // Axum — 或 sa_token_plugin_actix_web 
 |----------|---------|------|-------------|
 | **StpUtil API 参考** | [StpUtil.md](./StpUtil.md) | [StpUtil_zh-CN.md](./StpUtil_zh-CN.md) | StpUtil 工具类完整指南 |
 | **权限匹配规则** | [PermissionMatching.md](./PermissionMatching.md#english) | [PermissionMatching.md](./PermissionMatching.md#中文) | 权限检查和通配符匹配 |
+| **多账号与终端** | [MULTI_ACCOUNT_TERMINAL.md](./MULTI_ACCOUNT_TERMINAL.md#english) | [MULTI_ACCOUNT_TERMINAL.md](./MULTI_ACCOUNT_TERMINAL.md#中文) | 多 `login_type` 隔离（`SaLogic`）与按设备终端跟踪（`SaTerminalInfo`） |
 
 ---
 
@@ -136,13 +137,13 @@ cargo run --example distributed_session_example
 | **Gotham** | `sa-token-plugin-gotham` | 门面；默认 **`v074`** |
 | **Ntex** | `sa-token-plugin-ntex` | 门面；默认 **`v212`** |
 
-**依赖示例（0.1.13）：**
+**依赖示例（0.1.18）：**
 
 ```toml
 [dependencies]
-sa-token-plugin-axum = "0.1.13"
-# sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
-# sa-token-plugin-rocket = "0.1.13"
+sa-token-plugin-axum = "0.1.18"
+# sa-token-plugin-actix-web = { version = "0.1.18", features = ["redis"] }
+# sa-token-plugin-rocket = "0.1.18"
 ```
 
 ```rust
@@ -197,6 +198,7 @@ use sa_token_plugin_axum::*;  // 按框架替换 crate 名
 - **WebSocket**：使用多种 Token 来源认证 WebSocket 连接
 - **在线用户**：实时追踪和消息推送
 - **分布式 Session**：微服务跨服务会话共享
+- **授权数据持久化（0.1.18）**：权限与角色存入 `SaStorage`，重启后保留、并可跨节点共享 —— 详见 [主 README → Token 配置](../README_zh-CN.md#token-配置)
 
 ### 存储选项
 
@@ -206,8 +208,12 @@ use sa_token_plugin_axum::*;  // 按框架替换 crate 名
 
 **通过 features 轻松切换：**
 ```toml
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 ```
+
+**可配置键前缀（0.1.18）：** 每个存储键都会带上 `SaTokenConfig::storage_key_prefix`（默认 `"sa:"`），
+便于多租户或多应用共享同一 Redis 实例。通过 `SaTokenConfig::builder().storage_key_prefix("myapp:")`
+配置 —— 完整配置见 [配置参考](../README_zh-CN.md#token-配置)。
 
 ---
 
@@ -224,6 +230,7 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
 - **实时功能？** → [在线用户管理](./ONLINE_USER_MANAGEMENT.md)
 - **微服务？** → [分布式 Session](./DISTRIBUTED_SESSION.md)
 - **单点登录？** → [SSO 指南](./SSO_GUIDE.md#中文)
+- **多账号体系 / 多设备？** → [多账号与终端指南](./MULTI_ACCOUNT_TERMINAL.md#中文)
 - **错误代码？** → [错误参考手册](./ERROR_REFERENCE.md)
 - **代码示例？** → [示例目录](../examples/)
 

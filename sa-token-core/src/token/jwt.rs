@@ -2,6 +2,13 @@
 //
 //! JWT (JSON Web Token) Module | JWT (JSON Web Token) 模块
 //!
+//! ## 模式说明（对齐 Java StpLogicJwt）
+//!
+//! 当前 Rust 实现为 **Simple 风格**：`token` 本身是 JWT，但 Session / 权限等仍走 [`SaStorage`]。
+//! Stateless（无状态 Session）与 Mixin（混合映射）模式尚未全量移植；logout 仍会清理 storage 中的 token 映射。
+//!
+//! JWT 生成失败时见 [`SaTokenConfig::jwt_fallback_on_error`]：默认回退 UUID 并 `tracing::warn`，可关闭回退以快速失败。
+//!
 //! Provides complete JWT functionality including generation, validation, and parsing.
 //! 提供完整的 JWT 功能，包括生成、验证和解析。
 //!

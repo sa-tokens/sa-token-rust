@@ -21,6 +21,8 @@
 - 👥 **在线用户管理**: 实时在线状态跟踪和消息推送
 - 🔄 **分布式 Session**: 跨服务 Session 共享，适用于微服务架构
 - 🎫 **SSO 单点登录**: 完整的 SSO 实现，支持票据认证和统一登出
+- 👤 **多账号体系**: 通过 `SaLogic` 隔离多个 `login_type` 账号体系（如 `admin` + `user`）
+- 📱 **多设备终端**: 通过 `SaTerminalInfo` 记录每个设备的登录信息，支持按设备类型查询
 
 ## 📦 架构
 
@@ -81,7 +83,7 @@ sa-token-rust/
     └── StpUtil.md / StpUtil_zh-CN.md
 ```
 
-**多版本布局（0.1.13）** — Actix-web、Rocket、Salvo、Ntex、Gotham 以 **`sa-token-plugin-*` 门面 crate** 发布，通过 Cargo **`features`** 选择具体大版本（如 `v4`、`v05` …）。工作区内还有 **`sa-token-plugin-*-core`**（共享、与 HTTP 细节解耦的流程）和 **`sa-token-plugin-*-v*`**（各版本绑定）。Axum、Warp、Poem、Tide 仍为 **单 crate**，用 **绑定 feature**（`axum-08`、`warp-03` 等）对齐框架版本。
+**多版本布局（0.1.18）** — Actix-web、Rocket、Salvo、Ntex、Gotham 以 **`sa-token-plugin-*` 门面 crate** 发布，通过 Cargo **`features`** 选择具体大版本（如 `v4`、`v05` …）。工作区内还有 **`sa-token-plugin-*-core`**（共享、与 HTTP 细节解耦的流程）和 **`sa-token-plugin-*-v*`**（各版本绑定）。Axum、Warp、Poem、Tide 仍为 **单 crate**，用 **绑定 feature**（`axum-08`、`warp-03` 等）对齐框架版本。
 
 ### 📊 架构讨论
 
@@ -129,6 +131,7 @@ sa-token-rust/
 - 在线用户管理和实时推送 ([在线用户指南](docs/ONLINE_USER_MANAGEMENT.md))
 - 微服务分布式 Session ([分布式 Session 指南](docs/DISTRIBUTED_SESSION.md))
 - SSO 单点登录 ([SSO 指南](docs/SSO_GUIDE.md#中文))
+- 多账号体系与多设备终端 ([指南](docs/MULTI_ACCOUNT_TERMINAL.md#中文))
 
 ### 2. **sa-token-adapter**
 框架集成的抽象层：
@@ -165,7 +168,7 @@ sa-token-rust/
 ```toml
 [dependencies]
 # 一站式包 - 包含核心、宏和存储
-sa-token-plugin-axum = "0.1.13"  # 默认：内存存储
+sa-token-plugin-axum = "0.1.18"  # 默认：内存存储
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -184,13 +187,13 @@ use sa_token_plugin_axum::*;  // ✨ 你需要的一切！
 **通过 features 选择存储后端：**
 ```toml
 # Redis 存储
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 
 # 多个存储后端
-sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["memory", "redis"] }
 
 # 所有存储后端
-sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["full"] }
 ```
 
 **可用的 features：**
@@ -221,16 +224,16 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 
 ```toml
 # Axum 0.8 + Redis
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 
 # Actix-web 4.x 门面（默认 v4 + memory）+ Redis
-sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-actix-web = { version = "0.1.18", features = ["redis"] }
 
 # Rocket 0.5 / Salvo / Ntex / Gotham — 默认已与当前支持线对齐
-sa-token-plugin-rocket = "0.1.13"
-sa-token-plugin-salvo = "0.1.13"
-sa-token-plugin-ntex = "0.1.13"
-sa-token-plugin-gotham = "0.1.13"
+sa-token-plugin-rocket = "0.1.18"
+sa-token-plugin-salvo = "0.1.18"
+sa-token-plugin-ntex = "0.1.18"
+sa-token-plugin-gotham = "0.1.18"
 ```
 
 然后：`use sa_token_plugin_<下划线 crate 名>::*;`
@@ -243,9 +246,9 @@ sa-token-plugin-gotham = "0.1.13"
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.13"
-sa-token-storage-memory = "0.1.13"
-sa-token-plugin-axum = "0.1.13"
+sa-token-core = "0.1.18"
+sa-token-storage-memory = "0.1.18"
+sa-token-plugin-axum = "0.1.18"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -280,7 +283,7 @@ async fn main() {
 **添加 Redis feature 到依赖：**
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 ```
 
 **使用简化导入：**
@@ -695,6 +698,51 @@ for client_url in clients {
 cargo run --example sso_example
 ```
 
+### 11. 多账号体系与多设备终端
+
+按 `login_type` 隔离多个账号体系，并记录每个设备的终端信息：
+
+```rust
+use sa_token_core::StpUtil;
+
+// 多账号体系：admin 与 user 完全隔离
+let admin = StpUtil::stp_logic("admin");
+let user = StpUtil::stp_logic("user");
+
+// 同一 login_id，得到互相隔离的不同 token
+let admin_token = admin.login("10001").await?;
+let user_token = user.login("10001").await?;
+assert_ne!(admin_token.as_str(), user_token.as_str());
+
+// 权限/角色按 login_type 隔离
+admin.set_permissions("10001", vec!["admin:read".to_string()]).await?;
+user.set_permissions("10001", vec!["user:read".to_string()]).await?;
+
+// 多设备终端：带设备类型登录
+let pc_token  = admin.login_with_device("10001", Some("PC".to_string()), None).await?;
+let app_token = admin.login_with_device("10001", Some("APP".to_string()), None).await?;
+
+// 查询终端（None = 全部，Some(dt) = 按设备类型筛选）
+let all = admin.get_terminal_list("10001", None).await?;
+let pcs = admin.get_terminal_list("10001", Some("PC")).await?;
+
+// 按 token 反查终端
+let terminal = admin.get_terminal_info_by_token(&app_token).await?;
+
+// 登出会移除对应终端
+admin.logout(&pc_token).await?;
+```
+
+对于默认账号体系，可直接使用 `StpUtil` 门面：
+
+```rust
+let terminals = StpUtil::get_terminal_list("10001", None).await?;
+let tokens = StpUtil::get_token_value_list_by_login_id("10001", None).await?;
+let terminal = StpUtil::get_terminal_info_by_token(&token).await?;
+```
+
+📖 **[多账号与终端指南](docs/MULTI_ACCOUNT_TERMINAL.md#中文)**
+
 ## 📚 框架集成示例
 
 ### Axum
@@ -836,6 +884,9 @@ warp::serve(routes)
   - [分布式 Session](docs/DISTRIBUTED_SESSION.md) - 跨服务 Session 共享（7 种语言）
   - [SSO 单点登录](docs/SSO_GUIDE.md#中文) - 基于票据的 SSO 和统一登出（7 种语言）
 
+- **多账号与设备**
+  - [多账号与终端指南](docs/MULTI_ACCOUNT_TERMINAL.md#中文) - 多 `login_type` 隔离与按设备终端跟踪
+
 - **错误处理**
   - [错误参考](docs/ERROR_REFERENCE.md) - 完整的错误类型文档（7 种语言）
 
@@ -865,7 +916,38 @@ warp::serve(routes)
 
 ## 📋 版本历史
 
-### 版本 0.1.10（当前版本）
+### 版本 0.1.18（当前版本）
+
+**授权数据持久化到 `SaStorage`：**
+- 🗄️ **权限与角色改存 `SaStorage`**：`StpUtil` 的权限/角色 API 现在委托给 `SaTokenManager`，由其读写存储后端，不再使用进程内 `HashMap`。数据可在重启后保留，并在使用分布式存储（如 Redis）时跨节点共享。
+  - 新增 manager API：`set_permissions` / `get_permissions` / `add_permission` / `remove_permission` / `clear_permissions`（以及对应的 `*_roles` 方法）
+  - `has_permission` 仍支持精确匹配与 `xxx:*` 通配符匹配
+- 🔑 **可配置存储键前缀**：新增 `SaTokenConfig::storage_key_prefix`（默认 `"sa:"`）以及 `SaTokenConfig::make_key(suffix, id)` / `key_prefix()` 辅助方法。所有内置键（`token:`、`login:token:`、`session:`、`permission:`、`role:`，以及分布式 `dsession:` / `dservice:`）均遵循该前缀。可通过 `SaTokenConfig::builder().storage_key_prefix("myapp:")` 配置。
+- 🌐 **分布式 Session/凭证持久化**：`DistributedSessionStorage` 新增 `save_credential` / `get_credential`；新增 `SaStorageDistributedStorage` 适配器，将分布式 Session、登录索引与服务凭证持久化到任意 `SaStorage`。`DistributedSessionManager::register_service` 现在返回 `Result<(), SaTokenError>`。
+- 🔐 **修复 JWT 加密后端**：`jsonwebtoken` 启用 `rust_crypto` feature，解决 JWT 生成时的 `CryptoProvider` 运行时 panic。
+
+**破坏性变更：**
+- `DistributedSessionManager::register_service` 返回 `Result<(), SaTokenError>`（原为 `()`）。
+- 自定义 `DistributedSessionStorage` 实现需补充 `save_credential` / `get_credential`。
+
+### 版本 0.1.17
+
+**新增功能：**
+- 👤 **多账号体系（`SaLogic`）**：在同一个 manager 上隔离多个 `login_type` 账号体系
+  - `StpUtil::stp_logic(login_type)` 门面，配套全局注册表（`put`/`remove`/`try_get`）
+  - session、login token 映射、权限、角色、封禁均按 `login_type` 隔离
+  - 基于 `account_ns` 的键命名空间，使 `default`/`login` 账号与之前逐字节一致
+- 📱 **多设备终端（`SaTerminalInfo`）**：在 Account-Session 上按设备记录登录信息
+  - 登录写入终端记录；登出/踢人/顶号时移除
+  - 查询 API：`get_terminal_list`、`get_token_value_list_by_login_id`、`get_terminal_info_by_token`
+  - `index` 由 `history_terminal_count` 派生且只增不减；支持设备类型筛选
+- 📖 新增指南：[多账号与终端指南](docs/MULTI_ACCOUNT_TERMINAL.md#中文)
+
+**兼容性：**
+- `SaSession.terminal_list` / `history_terminal_count` 使用 `#[serde(default)]`——旧 session 可正常反序列化
+- 所有既有 `default` 账号的存储键与测试保持不变
+
+### 版本 0.1.10
 
 **新增功能：**
 - 🎁 **简化依赖管理**：
@@ -1039,6 +1121,12 @@ impl SaStorage for CustomStorage {
 
 ### Token 配置
 
+大多数 Web 框架插件提供 `SaTokenState::builder()`，但它只转发常用的一部分配置。如需**完整配置项**，
+请使用 `sa-token-core` 的 `SaTokenConfig::builder()`，再通过 `SaTokenState::new(storage, config)`
+传入，或直接构建 `SaTokenManager`。
+
+**快速示例（插件 builder）：**
+
 ```rust
 let state = SaTokenState::builder()
     .storage(Arc::new(MemoryStorage::new()))
@@ -1046,6 +1134,95 @@ let state = SaTokenState::builder()
     .timeout(7200)                    // Token 超时（秒）
     .active_timeout(1800)             // 活动超时（秒）
     .build();
+```
+
+**完整配置（`SaTokenConfig::builder()`）：**
+
+```rust
+use std::sync::Arc;
+use sa_token_core::{SaTokenConfig, SaTokenManager};
+use sa_token_core::config::{TokenStyle, LogoutMode, ReplacedLoginExitMode, ReplacedRange, LogoutRange};
+use sa_token_storage_memory::MemoryStorage;
+
+let manager: SaTokenManager = SaTokenConfig::builder()
+    // ── 存储（必填）────────────────────────────────────
+    .storage(Arc::new(MemoryStorage::new()))
+    // ── 基础 ───────────────────────────────────────────
+    .token_name("sa-token")             // header/cookie 中的 token 名称
+    .timeout(2_592_000)                  // token 有效期（秒），-1 = 永久
+    .active_timeout(-1)                  // 最低活跃间隔（秒），-1 = 不限制
+    .dynamic_active_timeout(false)       // 是否启用 per-token 动态 active_timeout
+    .auto_renew(true)                    // 访问时自动续签
+    .token_style(TokenStyle::Uuid)       // Uuid/SimpleUuid/Random32/64/128/Jwt/Hash/Timestamp/Tik
+    // ── 并发 / 多端登录 ────────────────────────────────
+    .is_concurrent(true)                 // 是否允许并发登录
+    .is_share(false)                     // 多人登录是否共享一个 token
+    .max_login_count(-1)                 // 单账号最大登录数，-1 = 不限制
+    .overflow_logout_mode(LogoutMode::Logout)            // Logout/KickOut/Replaced
+    .replaced_login_exit_mode(ReplacedLoginExitMode::OldDevice) // OldDevice/NewDevice
+    .replaced_range(ReplacedRange::CurrDeviceType)       // CurrDeviceType/AllDeviceType
+    // ── 存储键前缀 ─────────────────────────────────────
+    .storage_key_prefix("sa:")           // 所有存储键的前缀（默认 "sa:"）
+    // ── Token-Session 行为 ─────────────────────────────
+    .right_now_create_token_session(false)
+    .token_session_check_login(true)
+    .logout_range(LogoutRange::Token)    // Token/Account
+    .is_logout_keep_token_session(false)
+    // ── JWT（当 token_style = Jwt 时）──────────────────
+    .jwt_secret_key("your-secret-key")
+    .jwt_algorithm("HS256")
+    .jwt_issuer("my-app")
+    .jwt_audience("my-clients")
+    .jwt_fallback_on_error(true)         // JWT 生成失败时回退为 UUID
+    // ── 防重放 / Refresh Token ─────────────────────────
+    .enable_nonce(false)
+    .nonce_timeout(-1)
+    .enable_refresh_token(false)
+    .refresh_token_timeout(604_800)      // 7 天
+    .build();                            // 构建 manager 并自动初始化 StpUtil
+```
+
+> 如果只想得到 `SaTokenConfig`（例如传给 `SaTokenState::new(storage, config)`），
+> 请使用 `.build_config()` 代替 `.build()`。
+
+**可配置存储键前缀**
+
+`storage_key_prefix`（默认 `"sa:"`）会拼接到**每一个**存储键前面，便于多租户部署或多个应用共享同一个
+Redis 实例。注意：它与 HTTP `Bearer ` 请求头前缀**不是**同一个东西。
+
+| 数据 | 键格式 |
+| --- | --- |
+| Token | `{prefix}token:{token}` |
+| 登录 → token 映射 | `{prefix}login:token:{login_id}` |
+| Session | `{prefix}session:{login_id}` |
+| 权限 | `{prefix}permission:{login_id}` |
+| 角色 | `{prefix}role:{login_id}` |
+| 分布式 Session | `{prefix}dsession:{session_id}` |
+| 分布式登录索引 | `{prefix}dsession:index:{login_id}` |
+| 服务凭证 | `{prefix}dservice:{service_id}` |
+
+```rust
+// 例如所有键变为 "myapp:token:..."、"myapp:permission:..." 等
+let config = SaTokenConfig::builder()
+    .storage_key_prefix("myapp:")
+    .build_config();
+
+// 辅助方法
+let key = config.make_key("token:", "abc123"); // "myapp:token:abc123"
+let prefix = config.key_prefix();               // "myapp:"
+```
+
+**权限与角色已持久化到 `SaStorage`**（自 0.1.18 起），重启后保留，使用分布式存储时跨节点共享：
+
+```rust
+// 通过 StpUtil（内部委托 manager / 存储）
+StpUtil::set_permissions("10001", vec!["user:list".into(), "user:add".into()]).await?;
+StpUtil::add_permission("10001", "user:delete").await?;
+let perms = StpUtil::get_permissions("10001").await;      // Vec<String>
+let ok = StpUtil::has_permission("10001", "user:list").await; // 精确匹配 + "user:*" 通配符
+
+StpUtil::set_roles("10001", vec!["admin".into()]).await?;
+let is_admin = StpUtil::has_role("10001", "admin").await;
 ```
 
 ## 🤝 贡献

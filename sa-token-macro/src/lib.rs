@@ -58,6 +58,9 @@ use macros::{
     check_permissions_or::sa_check_permissions_or_impl,
     check_roles_and::sa_check_roles_and_impl,
     check_roles_or::sa_check_roles_or_impl,
+    check_safe::sa_check_safe_impl,
+    check_disable::sa_check_disable_impl,
+    check_or::sa_check_or_impl,
     ignore::sa_ignore_impl,
 };
 
@@ -107,4 +110,22 @@ pub fn sa_check_roles_or(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn sa_ignore(attr: TokenStream, item: TokenStream) -> TokenStream {
     sa_ignore_impl(attr, item)
+}
+
+/// 检查二级认证
+#[proc_macro_attribute]
+pub fn sa_check_safe(attr: TokenStream, item: TokenStream) -> TokenStream {
+    sa_check_safe_impl(attr, item)
+}
+
+/// 检查账号封禁
+#[proc_macro_attribute]
+pub fn sa_check_disable(attr: TokenStream, item: TokenStream) -> TokenStream {
+    sa_check_disable_impl(attr, item)
+}
+
+/// 组合鉴权（OR）：任一子检查通过即可
+#[proc_macro_attribute]
+pub fn sa_check_or(attr: TokenStream, item: TokenStream) -> TokenStream {
+    sa_check_or_impl(attr, item)
 }

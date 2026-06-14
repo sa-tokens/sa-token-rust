@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 
+pub mod terminal;
+pub use terminal::SaTerminalInfo;
+
 /// Session 对象 | Session Object
 /// 
 /// 用于存储用户会话数据的对象
@@ -33,6 +36,14 @@ pub struct SaSession {
     
     /// 创建时间 | Creation time
     pub create_time: DateTime<Utc>,
+
+    /// 已登录设备终端列表（对齐 Java SaSession.terminalList）
+    #[serde(default)]
+    pub terminal_list: Vec<SaTerminalInfo>,
+
+    /// 历史累计登录设备数，仅增不减，用于生成终端 index（对齐 Java historyTerminalCount）
+    #[serde(default)]
+    pub history_terminal_count: i32,
     
     /// 数据存储 | Data storage
     #[serde(flatten)]
@@ -44,6 +55,8 @@ impl SaSession {
         Self {
             id: id.into(),
             create_time: Utc::now(),
+            terminal_list: Vec::new(),
+            history_terminal_count: 0,
             data: HashMap::new(),
         }
     }
@@ -105,5 +118,101 @@ impl SaSession {
     /// - `false`: 键不存在 | Key doesn't exist
     pub fn has(&self, key: &str) -> bool {
         self.data.contains_key(key)
+    }
+
+    /// 新增一个终端：自动分配 index = history_terminal_count + 1，并累加历史计数
+    pub fn add_terminal(&mut self, mut terminal: SaTerminalInfo) {
+        self.history_terminal_count += 1;
+        terminal.index = self.history_terminal_count;
+        self.terminal_list.push(terminal);
+    }
+
+    /// 按 token 移除终端；返回被移除的终端（不存在则 None）
+    pub fn remove_terminal(&mut self, token_value: &str) -> Option<SaTerminalInfo> {
+        if let Some(pos) = self.terminal_list.iter().position(|t| t.token_value == token_value) {
+            Some(self.terminal_list.remove(pos))
+        } else {
+            None
+        }
+    }
+
+    /// 按 token 获取终端引用
+    pub fn get_terminal(&self, token_value: &str) -> Option<&SaTerminalInfo> {
+        self.terminal_list.iter().find(|t| t.token_value == token_value)
+    }
+
+    /// 终端列表副本
+    pub fn terminal_list_copy(&self) -> Vec<SaTerminalInfo> {
+        self.terminal_list.clone()
+    }
+
+    /// 按设备类型筛选终端；device_type 传 None 表示不限设备类型
+    pub fn get_terminal_list_by_device_type(&self, device_type: Option<&str>) -> Vec<SaTerminalInfo> {
+        match device_type {
+            None => self.terminal_list.clone(),
+            Some(dt) => self
+                .terminal_list
+                .iter()
+                .filter(|t| t.device_type == dt)
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// 按设备类型提取 token 列表
+    pub fn get_token_value_list_by_device_type(&self, device_type: Option<&str>) -> Vec<String> {
+        self.get_terminal_list_by_device_type(device_type)
+            .into_iter()
+            .map(|t| t.token_value)
+            .collect()
+    }
+
+    /// 终端数量
+    pub fn terminal_count(&self) -> usize {
+        self.terminal_list.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_terminal_index_increments() {
+        let mut session = SaSession::new("u1");
+        session.add_terminal(SaTerminalInfo::new("t1", "PC"));
+        session.add_terminal(SaTerminalInfo::new("t2", "APP"));
+        session.add_terminal(SaTerminalInfo::new("t3", "WEB"));
+        assert_eq!(session.terminal_count(), 3);
+        assert_eq!(session.history_terminal_count, 3);
+        assert_eq!(session.terminal_list[0].index, 1);
+        assert_eq!(session.terminal_list[1].index, 2);
+        assert_eq!(session.terminal_list[2].index, 3);
+
+        session.remove_terminal("t2");
+        session.add_terminal(SaTerminalInfo::new("t4", "PC"));
+        assert_eq!(session.terminal_list.last().unwrap().index, 4);
+    }
+
+    #[test]
+    fn test_filter_by_device_type() {
+        let mut session = SaSession::new("u1");
+        session.add_terminal(SaTerminalInfo::new("t1", "PC"));
+        session.add_terminal(SaTerminalInfo::new("t2", "PC"));
+        session.add_terminal(SaTerminalInfo::new("t3", "APP"));
+        assert_eq!(session.get_terminal_list_by_device_type(Some("PC")).len(), 2);
+        assert_eq!(session.get_terminal_list_by_device_type(None).len(), 3);
+        assert_eq!(
+            session.get_token_value_list_by_device_type(Some("APP")),
+            vec!["t3".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_deserialize_legacy_session_without_terminals() {
+        let json = r#"{"id":"u1","create_time":"2024-01-01T00:00:00Z","foo":"bar"}"#;
+        let session: SaSession = serde_json::from_str(json).unwrap();
+        assert!(session.terminal_list.is_empty());
+        assert_eq!(session.history_terminal_count, 0);
     }
 }

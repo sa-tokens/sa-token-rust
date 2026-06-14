@@ -9,14 +9,20 @@ homepage.workspace = true
 documentation.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Database storage implementation for sa-token-rust (placeholder)"
+description = "Database storage implementation for sa-token-rust (sqlx + PostgreSQL)"
+
+[features]
+default = ["postgres"]
+postgres = ["sqlx/postgres"]
+mysql = ["sqlx/mysql"]
 
 [dependencies]
-sa-token-adapter = { version = "0.1.17", path = "../sa-token-adapter" }
+sa-token-adapter = { version = "0.1.18", path = "../sa-token-adapter" }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+chrono = { workspace = true }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "macros", "chrono"] }
 
-# 可选的数据库驱动（根据需要启用）
-# sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "mysql", "sqlite"] }
-# sea-orm = { version = "0.12" }
+[dev-dependencies]
+sa-token-core = { version = "0.1.18", path = "../sa-token-core" }

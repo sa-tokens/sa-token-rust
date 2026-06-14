@@ -262,3 +262,12 @@ async fn test_jwt_decode_without_validation() {
     let decoded = jwt_mgr.decode_without_validation(&token).expect("decode");
     assert_eq!(decoded.login_id, "user_raw");
 }
+
+#[tokio::test]
+async fn test_jwt_logout_invalidates_session_mapping() {
+    let mgr = setup::fresh_manager_with_config(setup::jwt_config(TEST_SECRET));
+    let token = mgr.login("user_jwt_logout").await.expect("login");
+    assert!(mgr.is_valid(&token).await);
+    mgr.logout(&token).await.expect("logout");
+    assert!(!mgr.is_valid(&token).await);
+}

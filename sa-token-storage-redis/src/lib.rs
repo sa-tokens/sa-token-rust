@@ -388,4 +388,37 @@ impl SaStorage for RedisStorage {
         
         Ok(())
     }
+
+    /// 按模式列出逻辑键（Manager 传入如 `sa:token:*`，此处叠加物理前缀后匹配，返回时剥离前缀）
+    async fn keys(&self, pattern: &str) -> StorageResult<Vec<String>> {
+        let mut conn = self.client.clone();
+        let full_pattern = self.full_key(pattern);
+        let raw: Vec<String> = conn
+            .keys(&full_pattern)
+            .await
+            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+        let prefix_len = self.key_prefix.len();
+        Ok(raw
+            .into_iter()
+            .map(|k| k.get(prefix_len..).map(str::to_string).unwrap_or(k))
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_logical_key_stripping_matches_manager_expectations() {
+        let prefix = "phys:";
+        let raw = vec![
+            "phys:sa:token:a".to_string(),
+            "phys:sa:token:b".to_string(),
+        ];
+        let n = prefix.len();
+        let logical: Vec<String> = raw
+            .into_iter()
+            .map(|k| k.get(n..).map(str::to_string).unwrap_or(k))
+            .collect();
+        assert_eq!(logical, vec!["sa:token:a", "sa:token:b"]);
+    }
 }

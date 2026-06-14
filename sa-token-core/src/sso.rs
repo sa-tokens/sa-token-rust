@@ -240,6 +240,14 @@ impl SsoSession {
     }
 }
 
+/// SSO 票据校验结果（对齐 Java checkTicket 返回）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckTicketResult {
+    pub login_id: String,
+    /// 剩余有效时间（秒）
+    pub remain_seconds: i64,
+}
+
 /// SSO 服务端 | SSO Server
 ///
 /// 中央认证服务，负责票据生成、验证和会话管理
@@ -249,6 +257,8 @@ pub struct SsoServer {
     tickets: Arc<RwLock<HashMap<String, SsoTicket>>>,
     sessions: Arc<RwLock<HashMap<String, SsoSession>>>,
     ticket_timeout: i64,
+    allow_cross_domain: bool,
+    allowed_origins: Vec<String>,
 }
 
 impl SsoServer {
@@ -261,8 +271,36 @@ impl SsoServer {
             manager,
             tickets: Arc::new(RwLock::new(HashMap::new())),
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            ticket_timeout: 300, // 默认 5 分钟 | Default 5 minutes
+            ticket_timeout: 300,
+            allow_cross_domain: true,
+            allowed_origins: vec!["*".to_string()],
         }
+    }
+
+    /// 注入 SSO 配置（跨域白名单等）
+    pub fn with_config(mut self, config: &SsoConfig) -> Self {
+        self.ticket_timeout = config.ticket_timeout;
+        self.allow_cross_domain = config.allow_cross_domain;
+        self.allowed_origins = config.allowed_origins.clone();
+        self
+    }
+
+    /// 校验 Origin / 服务 URL 是否在白名单内
+    pub fn is_allowed_origin(&self, origin: &str) -> bool {
+        if !self.allow_cross_domain {
+            return false;
+        }
+        self.allowed_origins.contains(&"*".to_string())
+            || self.allowed_origins.iter().any(|allowed| {
+                origin == allowed || origin.starts_with(allowed)
+            })
+    }
+
+    fn validate_service_access(&self, service: &str) -> SaTokenResult<()> {
+        if !self.is_allowed_origin(service) {
+            return Err(SaTokenError::ServiceMismatch);
+        }
+        Ok(())
     }
 
     /// 设置票据超时时间 | Set ticket timeout
@@ -285,7 +323,10 @@ impl SsoServer {
         
         // 如果会话存在，进一步验证 Token 是否有效
         if has_session {
-            let key = self.manager.config.make_key("login:token:", &format!("{}:sso", login_id));
+            let key = self.manager.config.make_key(
+                "login:token:",
+                &self.manager.account_ns("sso", login_id),
+            );
             matches!(self.manager.storage.get(&key).await, Ok(Some(_)))
         } else {
             false
@@ -304,6 +345,7 @@ impl SsoServer {
     /// # 返回 | Returns
     /// 新创建的票据 | Newly created ticket
     pub async fn create_ticket(&self, login_id: String, service: String) -> SaTokenResult<SsoTicket> {
+        self.validate_service_access(&service)?;
         // 生成票据 | Generate ticket
         let ticket = SsoTicket::new(login_id.clone(), service.clone(), self.ticket_timeout);
         
@@ -337,6 +379,7 @@ impl SsoServer {
     /// * `TicketExpired` - 票据已过期或已使用 | Ticket expired or used
     /// * `ServiceMismatch` - 服务 URL 不匹配 | Service URL mismatch
     pub async fn validate_ticket(&self, ticket_id: &str, service: &str) -> SaTokenResult<String> {
+        self.validate_service_access(service)?;
         let mut tickets = self.tickets.write().await;
         
         // 1. 检查票据是否存在 | Check if ticket exists
@@ -358,6 +401,47 @@ impl SsoServer {
         let login_id = ticket.login_id.clone();
 
         Ok(login_id)
+    }
+
+    /// 检查票据（不消费，返回 login_id 与剩余有效期）
+    pub async fn check_ticket(
+        &self,
+        ticket_id: &str,
+        service: &str,
+    ) -> SaTokenResult<CheckTicketResult> {
+        self.validate_service_access(service)?;
+        let tickets = self.tickets.read().await;
+        let ticket = tickets.get(ticket_id).ok_or(SaTokenError::InvalidTicket)?;
+
+        if !ticket.is_valid() {
+            return Err(SaTokenError::TicketExpired);
+        }
+        if ticket.service != service {
+            return Err(SaTokenError::ServiceMismatch);
+        }
+
+        let remain = ticket.expire_time.signed_duration_since(Utc::now());
+        Ok(CheckTicketResult {
+            login_id: ticket.login_id.clone(),
+            remain_seconds: remain.num_seconds().max(0),
+        })
+    }
+
+    /// 为 SLO 统一登出生成各客户端回调 URL
+    pub fn build_slo_logout_urls(client_urls: &[String]) -> Vec<String> {
+        client_urls
+            .iter()
+            .map(|client| {
+                let base = client.trim_end_matches('/');
+                format!("{}/sso/logout?slo=1&service={}", base, urlencoding::encode(client))
+            })
+            .collect()
+    }
+
+    /// 统一登出并返回 SLO 回调 URL 列表
+    pub async fn logout_with_slo(&self, login_id: &str) -> SaTokenResult<Vec<String>> {
+        let clients = self.logout(login_id).await?;
+        Ok(Self::build_slo_logout_urls(&clients))
     }
 
     /// 用户登录 | User login
@@ -419,7 +503,10 @@ impl SsoServer {
 
         // 3. 从 Token 管理器中登出（登出所有类型的 Token）| Logout from Token manager (all token types)
         // 3.1 登出 SSO 服务端 Token
-        let sso_key = self.manager.config.make_key("login:token:", &format!("{}:sso", login_id));
+        let sso_key = self.manager.config.make_key(
+            "login:token:",
+            &self.manager.account_ns("sso", login_id),
+        );
         let _ = self.manager.storage.delete(&sso_key).await;
         
         // 3.2 登出默认类型 Token
@@ -551,12 +638,18 @@ impl SsoClient {
     /// 是否已登录 | Whether logged in
     pub async fn check_local_login(&self, login_id: &str) -> bool {
         // 检查 SSO 客户端类型的登录
-        let key = self.manager.config.make_key("login:token:", &format!("{}:sso_client", login_id));
+        let key = self.manager.config.make_key(
+            "login:token:",
+            &self.manager.account_ns("sso_client", login_id),
+        );
         match self.manager.storage.get(&key).await {
             Ok(Some(_)) => true,
             _ => {
                 // 兼容旧的无类型登录
-                let key_default = self.manager.config.make_key("login:token:", login_id);
+                let key_default = self.manager.config.make_key(
+                    "login:token:",
+                    &self.manager.account_ns("default", login_id),
+                );
                 matches!(self.manager.storage.get(&key_default).await, Ok(Some(_)))
             }
         }
@@ -616,7 +709,10 @@ impl SsoClient {
         }
         
         // 2. 登出 SSO 客户端类型的 Token | Logout SSO client token
-        let sso_client_key = self.manager.config.make_key("login:token:", &format!("{}:sso_client", login_id));
+        let sso_client_key = self.manager.config.make_key(
+            "login:token:",
+            &self.manager.account_ns("sso_client", login_id),
+        );
         let _ = self.manager.storage.delete(&sso_client_key).await;
         
         // 3. 登出默认类型的 Token（兼容）| Logout default token (compatibility)

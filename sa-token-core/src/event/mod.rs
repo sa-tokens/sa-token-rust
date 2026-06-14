@@ -259,6 +259,10 @@ pub enum SaTokenEventType {
     Replaced,
     /// 被封禁事件
     Banned,
+    /// 开启二级认证
+    OpenSafe,
+    /// 关闭二级认证
+    CloseSafe,
 }
 
 /// 事件数据
@@ -346,6 +350,28 @@ impl SaTokenEvent {
             login_id: login_id.into(),
             token: String::new(),
             login_type: "default".to_string(),
+            timestamp: Utc::now(),
+            extra: None,
+        }
+    }
+
+    pub fn open_safe(token: impl Into<String>, service: impl Into<String>) -> Self {
+        Self {
+            event_type: SaTokenEventType::OpenSafe,
+            login_id: String::new(),
+            token: token.into(),
+            login_type: service.into(),
+            timestamp: Utc::now(),
+            extra: None,
+        }
+    }
+
+    pub fn close_safe(token: impl Into<String>, service: impl Into<String>) -> Self {
+        Self {
+            event_type: SaTokenEventType::CloseSafe,
+            login_id: String::new(),
+            token: token.into(),
+            login_type: service.into(),
             timestamp: Utc::now(),
             extra: None,
         }
@@ -459,6 +485,14 @@ pub trait SaTokenListener: Send + Sync {
         let _ = (login_id, login_type);
     }
 
+    async fn on_open_safe(&self, token: &str, service: &str) {
+        let _ = (token, service);
+    }
+
+    async fn on_close_safe(&self, token: &str, service: &str) {
+        let _ = (token, service);
+    }
+
     /// 通用事件处理（所有事件都会触发此方法）
     /// Generic Event Handler (triggered by all events)
     /// 
@@ -543,6 +577,12 @@ impl SaTokenEventBus {
                 }
                 SaTokenEventType::Banned => {
                     listener.on_banned(&event.login_id, &event.login_type).await;
+                }
+                SaTokenEventType::OpenSafe => {
+                    listener.on_open_safe(&event.token, &event.login_type).await;
+                }
+                SaTokenEventType::CloseSafe => {
+                    listener.on_close_safe(&event.token, &event.login_type).await;
                 }
             }
         }

@@ -41,6 +41,15 @@ pub enum SaTokenError {
     
     #[error("Account is kicked out")]
     AccountKickedOut,
+
+    #[error("Account login has been replaced on another device")]
+    AccountReplaced,
+
+    #[error("Secondary authentication required for service '{0}'")]
+    NotSafe(String),
+
+    #[error("Account is disabled for service '{service}' at level {level}")]
+    DisableService { service: String, level: i32 },
     
     // ============ Session Errors | Session 错误 ============
     #[error("Session not found")]
@@ -161,6 +170,8 @@ impl SaTokenError {
             | Self::TokenExpired 
             | Self::TokenInactive 
             | Self::InvalidToken(_)
+            | Self::AccountKickedOut
+            | Self::AccountReplaced
         )
     }
     

@@ -21,6 +21,8 @@ A lightweight, high-performance authentication and authorization framework for R
 - 👥 **Online User Management**: Real-time online status tracking and message push
 - 🔄 **Distributed Session**: Cross-service session sharing for microservices architecture
 - 🎫 **SSO Single Sign-On**: Complete SSO implementation with ticket-based authentication and unified logout
+- 👤 **Multi-Account System**: Isolated multi-`login_type` account systems via `SaLogic` (e.g. `admin` + `user`)
+- 📱 **Multi-Device Terminal**: Per-device terminal tracking with `SaTerminalInfo`, queryable by device type
 
 ## 📦 Architecture
 
@@ -81,7 +83,7 @@ sa-token-rust/
     └── StpUtil.md / StpUtil_zh-CN.md
 ```
 
-**Multi-version layout (0.1.13)** — Actix-web, Rocket, Salvo, Ntex, and Gotham publish as a single **`sa-token-plugin-*` façade crate**. Cargo **`features`** pick the backing framework major line (`v4`, `v05`, …); workspace sources also include **`sa-token-plugin-*-core`** (shared HTTP-agnostic pipeline) and **`sa-token-plugin-*-v*`** (per-version bindings). Axum, Warp, Poem, and Tide stay **one crate** with a **binding feature** (`axum-08`, `warp-03`, …).
+**Multi-version layout (0.1.18)** — Actix-web, Rocket, Salvo, Ntex, and Gotham publish as a single **`sa-token-plugin-*` façade crate**. Cargo **`features`** pick the backing framework major line (`v4`, `v05`, …); workspace sources also include **`sa-token-plugin-*-core`** (shared HTTP-agnostic pipeline) and **`sa-token-plugin-*-v*`** (per-version bindings). Axum, Warp, Poem, and Tide stay **one crate** with a **binding feature** (`axum-08`, `warp-03`, …).
 
 ## 🎯 Core Components
 
@@ -102,6 +104,7 @@ Core authentication and authorization logic:
 - Online user management and real-time push ([Online User Guide](docs/ONLINE_USER_MANAGEMENT.md))
 - Distributed session for microservices ([Distributed Session Guide](docs/DISTRIBUTED_SESSION.md))
 - SSO single sign-on ([SSO Guide](docs/SSO_GUIDE.md#english))
+- Multi-account system & multi-device terminal ([Guide](docs/MULTI_ACCOUNT_TERMINAL.md#english))
 
 ### 2. **sa-token-adapter**
 Abstraction layer for framework integration:
@@ -138,7 +141,7 @@ All plugins provide:
 ```toml
 [dependencies]
 # All-in-one package - includes core, macros, and storage
-sa-token-plugin-axum = "0.1.13"  # Default: memory storage
+sa-token-plugin-axum = "0.1.18"  # Default: memory storage
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -157,13 +160,13 @@ use sa_token_plugin_axum::*;  // ✨ Everything you need!
 **Choose your storage backend with features:**
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 
 # Multiple storage backends
-sa-token-plugin-axum = { version = "0.1.13", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["memory", "redis"] }
 
 # All storage backends
-sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["full"] }
 ```
 
 **Available features:**
@@ -194,16 +197,16 @@ sa-token-plugin-axum = { version = "0.1.13", features = ["full"] }
 
 ```toml
 # Axum 0.8 + Redis
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 
 # Actix-web 4.x façade (default v4 + memory) + Redis
-sa-token-plugin-actix-web = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-actix-web = { version = "0.1.18", features = ["redis"] }
 
 # Rocket 0.5 / Salvo / Ntex / Gotham — defaults match current supported lines
-sa-token-plugin-rocket = "0.1.13"
-sa-token-plugin-salvo = "0.1.13"
-sa-token-plugin-ntex = "0.1.13"
-sa-token-plugin-gotham = "0.1.13"
+sa-token-plugin-rocket = "0.1.18"
+sa-token-plugin-salvo = "0.1.18"
+sa-token-plugin-ntex = "0.1.18"
+sa-token-plugin-gotham = "0.1.18"
 ```
 
 Then: `use sa_token_plugin_<crate_name_with_underscores>::*;`
@@ -216,9 +219,9 @@ If you prefer fine-grained control, you can still import packages separately:
 
 ```toml
 [dependencies]
-sa-token-core = "0.1.13"
-sa-token-storage-memory = "0.1.13"
-sa-token-plugin-axum = "0.1.13"
+sa-token-core = "0.1.18"
+sa-token-storage-memory = "0.1.18"
+sa-token-plugin-axum = "0.1.18"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 ```
@@ -253,7 +256,7 @@ async fn main() {
 **Add Redis feature to your dependency:**
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.1.13", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.1.18", features = ["redis"] }
 ```
 
 **With simplified import:**
@@ -668,6 +671,51 @@ Run SSO example:
 cargo run --example sso_example
 ```
 
+### 11. Multi-Account System & Multi-Device Terminal
+
+Isolate multiple account systems by `login_type` and track per-device terminals:
+
+```rust
+use sa_token_core::StpUtil;
+
+// Multi-account system: admin and user are fully isolated
+let admin = StpUtil::stp_logic("admin");
+let user = StpUtil::stp_logic("user");
+
+// Same login_id, different isolated tokens
+let admin_token = admin.login("10001").await?;
+let user_token = user.login("10001").await?;
+assert_ne!(admin_token.as_str(), user_token.as_str());
+
+// Permissions/roles are isolated per login_type
+admin.set_permissions("10001", vec!["admin:read".to_string()]).await?;
+user.set_permissions("10001", vec!["user:read".to_string()]).await?;
+
+// Multi-device terminal: login with device type
+let pc_token  = admin.login_with_device("10001", Some("PC".to_string()), None).await?;
+let app_token = admin.login_with_device("10001", Some("APP".to_string()), None).await?;
+
+// Query terminals (None = all, Some(dt) = filter by device type)
+let all = admin.get_terminal_list("10001", None).await?;
+let pcs = admin.get_terminal_list("10001", Some("PC")).await?;
+
+// Reverse-lookup terminal by token
+let terminal = admin.get_terminal_info_by_token(&app_token).await?;
+
+// Logout removes the matching terminal
+admin.logout(&pc_token).await?;
+```
+
+For the default account system, use the `StpUtil` facade directly:
+
+```rust
+let terminals = StpUtil::get_terminal_list("10001", None).await?;
+let tokens = StpUtil::get_token_value_list_by_login_id("10001", None).await?;
+let terminal = StpUtil::get_terminal_info_by_token(&token).await?;
+```
+
+📖 **[Multi-Account & Terminal Guide](docs/MULTI_ACCOUNT_TERMINAL.md#english)**
+
 📖 **[Full Event Listener Documentation](docs/EVENT_LISTENER.md)**
 
 ## 📚 Framework Integration Examples
@@ -811,6 +859,9 @@ warp::serve(routes)
   - [Distributed Session](docs/DISTRIBUTED_SESSION.md) - Cross-service session sharing (7 languages)
   - [SSO Single Sign-On](docs/SSO_GUIDE.md#english) - Ticket-based SSO with unified logout (7 languages)
 
+- **Multi-Account & Devices**
+  - [Multi-Account & Terminal Guide](docs/MULTI_ACCOUNT_TERMINAL.md#english) - Multi-`login_type` isolation and per-device terminal tracking
+
 - **Error Handling**
   - [Error Reference](docs/ERROR_REFERENCE.md) - Complete error types documentation (7 languages)
 
@@ -840,7 +891,38 @@ Most documentation is available in 7 languages:
 
 ## 📋 Version History
 
-### Version 0.1.10 (Current)
+### Version 0.1.18 (Current)
+
+**Authorization data is now persisted to `SaStorage`:**
+- 🗄️ **Permissions & roles moved into `SaStorage`**: `StpUtil` permission/role APIs now delegate to `SaTokenManager`, which reads/writes the storage backend instead of an in-process `HashMap`. Data survives restarts and is shared across nodes when a distributed store (e.g. Redis) is used.
+  - New manager APIs: `set_permissions` / `get_permissions` / `add_permission` / `remove_permission` / `clear_permissions` (and the matching `*_roles` methods)
+  - `has_permission` keeps exact matching plus `xxx:*` wildcard matching
+- 🔑 **Configurable storage key prefix**: new `SaTokenConfig::storage_key_prefix` (default `"sa:"`) plus the `SaTokenConfig::make_key(suffix, id)` / `key_prefix()` helpers. All built-in keys (`token:`, `login:token:`, `session:`, `permission:`, `role:`, distributed `dsession:` / `dservice:`) honor the prefix. Configure it via `SaTokenConfig::builder().storage_key_prefix("myapp:")`.
+- 🌐 **Distributed session/credentials persistence**: `DistributedSessionStorage` gains `save_credential` / `get_credential`; new `SaStorageDistributedStorage` adapter persists distributed sessions, the login index, and service credentials to any `SaStorage`. `DistributedSessionManager::register_service` now returns `Result<(), SaTokenError>`.
+- 🔐 **JWT crypto backend fixed**: `jsonwebtoken` now enables the `rust_crypto` feature, resolving the `CryptoProvider` runtime panic for JWT tokens.
+
+**Breaking changes:**
+- `DistributedSessionManager::register_service` returns `Result<(), SaTokenError>` (was `()`).
+- Custom `DistributedSessionStorage` implementations must add `save_credential` / `get_credential`.
+
+### Version 0.1.17
+
+**New Features:**
+- 👤 **Multi-Account System (`SaLogic`)**: Isolated multi-`login_type` account systems on a single manager
+  - `StpUtil::stp_logic(login_type)` facade with a global registry (`put`/`remove`/`try_get`)
+  - Per-`login_type` isolation of session, login token map, permissions, roles, and ban (disable)
+  - `account_ns`-based key namespacing keeps the `default`/`login` account byte-identical to before
+- 📱 **Multi-Device Terminal (`SaTerminalInfo`)**: Per-device login tracking on the Account-Session
+  - Login writes a terminal entry; logout/kick-out/replace removes it
+  - Query APIs: `get_terminal_list`, `get_token_value_list_by_login_id`, `get_terminal_info_by_token`
+  - Monotonic `index` derived from `history_terminal_count`; device-type filtering
+- 📖 New guide: [Multi-Account & Terminal Guide](docs/MULTI_ACCOUNT_TERMINAL.md#english)
+
+**Compatibility:**
+- `SaSession.terminal_list` / `history_terminal_count` use `#[serde(default)]` — legacy sessions deserialize cleanly
+- All existing `default` account storage keys and tests are unchanged
+
+### Version 0.1.10
 
 **New Features:**
 - 🎁 **Simplified Dependency Management**:
@@ -1008,6 +1090,13 @@ impl SaStorage for CustomStorage {
 
 ### Token Configuration
 
+Most web-framework plugins expose a `SaTokenState::builder()` that forwards a subset of the
+configuration. For the **full set of options** use `SaTokenConfig::builder()` (from
+`sa-token-core`) and pass the resulting config into `SaTokenState::new(storage, config)` or
+build a `SaTokenManager` directly.
+
+**Quick example (plugin builder):**
+
 ```rust
 let state = SaTokenState::builder()
     .storage(Arc::new(MemoryStorage::new()))
@@ -1015,6 +1104,97 @@ let state = SaTokenState::builder()
     .timeout(7200)                    // Token timeout (seconds)
     .active_timeout(1800)             // Activity timeout (seconds)
     .build();
+```
+
+**Full configuration (`SaTokenConfig::builder()`):**
+
+```rust
+use std::sync::Arc;
+use sa_token_core::{SaTokenConfig, SaTokenManager};
+use sa_token_core::config::{TokenStyle, LogoutMode, ReplacedLoginExitMode, ReplacedRange, LogoutRange};
+use sa_token_storage_memory::MemoryStorage;
+
+let manager: SaTokenManager = SaTokenConfig::builder()
+    // ── storage (required) ──────────────────────────────
+    .storage(Arc::new(MemoryStorage::new()))
+    // ── basics ──────────────────────────────────────────
+    .token_name("sa-token")             // token name in header/cookie
+    .timeout(2_592_000)                  // token validity (s); -1 =永久
+    .active_timeout(-1)                  // inactivity freeze (s); -1 = off
+    .dynamic_active_timeout(false)       // per-token dynamic active_timeout
+    .auto_renew(true)                    // auto-renew on access
+    .token_style(TokenStyle::Uuid)       // Uuid/SimpleUuid/Random32/64/128/Jwt/Hash/Timestamp/Tik
+    // ── concurrency / multi-login ───────────────────────
+    .is_concurrent(true)                 // allow concurrent logins
+    .is_share(false)                     // share one token across logins
+    .max_login_count(-1)                 // max logins per account; -1 = unlimited
+    .overflow_logout_mode(LogoutMode::Logout)            // Logout/KickOut/Replaced
+    .replaced_login_exit_mode(ReplacedLoginExitMode::OldDevice) // OldDevice/NewDevice
+    .replaced_range(ReplacedRange::CurrDeviceType)       // CurrDeviceType/AllDeviceType
+    // ── storage key prefix ──────────────────────────────
+    .storage_key_prefix("sa:")           // prefix for ALL storage keys (default "sa:")
+    // ── token-session behavior ──────────────────────────
+    .right_now_create_token_session(false)
+    .token_session_check_login(true)
+    .logout_range(LogoutRange::Token)    // Token/Account
+    .is_logout_keep_token_session(false)
+    // ── JWT (when token_style = Jwt) ────────────────────
+    .jwt_secret_key("your-secret-key")
+    .jwt_algorithm("HS256")
+    .jwt_issuer("my-app")
+    .jwt_audience("my-clients")
+    .jwt_fallback_on_error(true)         // fall back to UUID if JWT generation fails
+    // ── replay protection / refresh token ───────────────
+    .enable_nonce(false)
+    .nonce_timeout(-1)
+    .enable_refresh_token(false)
+    .refresh_token_timeout(604_800)      // 7 days
+    .build();                            // builds manager + auto-inits StpUtil
+```
+
+> Use `.build_config()` instead of `.build()` if you only want a `SaTokenConfig`
+> (e.g. to pass into `SaTokenState::new(storage, config)`).
+
+**Configurable storage key prefix**
+
+`storage_key_prefix` (default `"sa:"`) is prepended to **every** storage key, which is handy for
+multi-tenant deployments or sharing one Redis instance across apps. It is **not** the same as the
+HTTP `Bearer ` header prefix.
+
+| Data | Key pattern |
+| --- | --- |
+| Token | `{prefix}token:{token}` |
+| Login → token mapping | `{prefix}login:token:{login_id}` |
+| Session | `{prefix}session:{login_id}` |
+| Permissions | `{prefix}permission:{login_id}` |
+| Roles | `{prefix}role:{login_id}` |
+| Distributed session | `{prefix}dsession:{session_id}` |
+| Distributed login index | `{prefix}dsession:index:{login_id}` |
+| Service credential | `{prefix}dservice:{service_id}` |
+
+```rust
+// e.g. all keys become "myapp:token:...", "myapp:permission:..." etc.
+let config = SaTokenConfig::builder()
+    .storage_key_prefix("myapp:")
+    .build_config();
+
+// helpers
+let key = config.make_key("token:", "abc123"); // "myapp:token:abc123"
+let prefix = config.key_prefix();               // "myapp:"
+```
+
+**Permissions & roles are persisted to `SaStorage`** (since 0.1.18), so they survive restarts and
+are shared across nodes with a distributed store:
+
+```rust
+// via StpUtil (delegates to the manager / storage)
+StpUtil::set_permissions("10001", vec!["user:list".into(), "user:add".into()]).await?;
+StpUtil::add_permission("10001", "user:delete").await?;
+let perms = StpUtil::get_permissions("10001").await;      // Vec<String>
+let ok = StpUtil::has_permission("10001", "user:list").await; // exact + "user:*" wildcard
+
+StpUtil::set_roles("10001", vec!["admin".into()]).await?;
+let is_admin = StpUtil::has_role("10001", "admin").await;
 ```
 
 ## 🤝 Contributing

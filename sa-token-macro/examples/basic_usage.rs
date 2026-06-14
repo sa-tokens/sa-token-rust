@@ -65,6 +65,33 @@ async fn moderate_or_admin() -> SaTokenResult<String> {
     Ok("Moderate or admin - requires admin OR moderator role".to_string())
 }
 
+// ============ 封禁 / 二级认证 / 组合 OR ============
+
+#[sa_check_safe]
+async fn transfer_money() -> SaTokenResult<String> {
+    Ok("Transfer - requires secondary auth".to_string())
+}
+
+#[sa_check_safe("pay")]
+async fn pay_order() -> SaTokenResult<String> {
+    Ok("Pay - requires pay secondary auth".to_string())
+}
+
+#[sa_check_disable]
+async fn active_account_action() -> SaTokenResult<String> {
+    Ok("Active account only".to_string())
+}
+
+#[sa_check_disable("login", level = 1)]
+async fn not_banned_login() -> SaTokenResult<String> {
+    Ok("Not banned for login service".to_string())
+}
+
+#[sa_check_or(permission = "user:read", role = "admin")]
+async fn read_or_admin() -> SaTokenResult<String> {
+    Ok("Read or admin role".to_string())
+}
+
 // ============ 忽略认证示例 ============
 
 #[sa_ignore]

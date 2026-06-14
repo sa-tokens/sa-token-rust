@@ -1,5 +1,5 @@
 # sa-token-storage-database
-
+（The functionality is not yet complete.）
 Database storage implementation for sa-token-rust (Coming Soon).
 
 ## Status

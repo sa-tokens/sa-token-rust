@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod generator;
 pub mod validator;
 pub mod jwt;
+pub mod map;
 
 pub use generator::TokenGenerator;
 pub use validator::TokenValidator;
@@ -126,6 +127,33 @@ impl TokenInfo {
     
     pub fn update_active_time(&mut self) {
         self.last_active_time = Utc::now();
+    }
+
+    /// 是否因长时间未活跃而冻结（对齐 Java StpLogic.isFreeze）
+    ///
+    /// `active_timeout <= 0` 表示永不冻结；否则比较当前时间与 `last_active_time` 的间隔是否超过阈值。
+    pub fn is_freeze(&self, active_timeout: i64) -> bool {
+        if active_timeout <= 0 {
+            return false;
+        }
+        Utc::now()
+            .signed_duration_since(self.last_active_time)
+            .num_seconds()
+            > active_timeout
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_freeze_respects_active_timeout() {
+        let mut info = TokenInfo::new(TokenValue::new("t"), "u");
+        info.last_active_time = Utc::now() - chrono::Duration::seconds(120);
+        assert!(info.is_freeze(60));
+        assert!(!info.is_freeze(-1));
+        assert!(!info.is_freeze(0));
     }
 }
 

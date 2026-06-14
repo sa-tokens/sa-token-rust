@@ -18,7 +18,7 @@ Path-based authentication allows you to configure which routes require authentic
 
 ## Quick Start
 
-**Dependencies (0.1.13):** Actix-web needs the façade crate **`sa-token-plugin-actix-web`** (default **`v4`** + **`memory`**). Adjust storage with `redis` / `database` features as in the [main README](../README.md#-quick-start).
+**Dependencies (0.1.18):** Actix-web needs the façade crate **`sa-token-plugin-actix-web`** (default **`v4`** + **`memory`**). Adjust storage with `redis` / `database` features as in the [main README](../README.md#-quick-start).
 
 ### Basic Usage
 

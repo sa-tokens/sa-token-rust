@@ -13,14 +13,14 @@ description = "Warp framework integration for sa-token-rust - All-in-one package
 
 [dependencies]
 # 核心依赖（重新导出给用户）
-sa-token-core = { version = "0.1.17" }
-sa-token-adapter = { version = "0.1.17" }
-sa-token-macro = { version = "0.1.17" }
+sa-token-core = { version = "0.1.18" }
+sa-token-adapter = { version = "0.1.18" }
+sa-token-macro = { version = "0.1.18" }
 
 # 存储实现（可选，通过 feature 控制）
-sa-token-storage-memory = { version = "0.1.17", optional = true }
-sa-token-storage-redis = { version = "0.1.17", optional = true }
-sa-token-storage-database = { version = "0.1.17", optional = true }
+sa-token-storage-memory = { version = "0.1.18", optional = true }
+sa-token-storage-redis = { version = "0.1.18", optional = true }
+sa-token-storage-database = { version = "0.1.18", optional = true }
 
 tokio = { workspace = true }
 async-trait = { workspace = true }

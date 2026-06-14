@@ -39,6 +39,9 @@ pub struct SaTokenContext {
 
     /// 登录 ID | Login ID
     pub login_id: Option<String>,
+
+    /// 身份临时切换目标 login_id（对齐 Java switchTo）
+    pub switch_login_id: Option<String>,
 }
 
 impl SaTokenContext {
@@ -47,6 +50,7 @@ impl SaTokenContext {
             token: None,
             token_info: None,
             login_id: None,
+            switch_login_id: None,
         }
     }
 

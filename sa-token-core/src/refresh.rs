@@ -9,8 +9,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc, Duration};
 use sa_token_adapter::storage::SaStorage;
 use crate::error::{SaTokenError, SaTokenResult};
-use crate::token::TokenValue;
-use crate::token::TokenGenerator;
+use crate::token::{TokenInfo, TokenValue, TokenGenerator};
 use crate::config::SaTokenConfig;
 use uuid::Uuid;
 
@@ -26,26 +25,65 @@ pub struct RefreshTokenManager {
 
 impl RefreshTokenManager {
     /// Create new refresh token manager | 创建新的 refresh token 管理器
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `storage` - Storage backend | 存储后端
-    /// * `config` - Sa-token configuration | Sa-token 配置
     pub fn new(storage: Arc<dyn SaStorage>, config: Arc<SaTokenConfig>) -> Self {
         Self { storage, config }
     }
 
+    /// refresh token 存储键：{prefix}refresh:{token}
+    fn refresh_key(&self, refresh_token: &str) -> String {
+        self.config.make_key("refresh:", refresh_token)
+    }
+
+    /// 用户 refresh token 索引键：{prefix}refresh:user:{login_id}
+    fn user_index_key(&self, login_id: &str) -> String {
+        self.config.make_key("refresh:user:", login_id)
+    }
+
+    async fn load_string_list(&self, key: &str) -> SaTokenResult<Vec<String>> {
+        match self
+            .storage
+            .get(key)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?
+        {
+            Some(value) => serde_json::from_str(&value).map_err(SaTokenError::SerializationError),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    async fn save_string_list(&self, key: &str, list: &[String]) -> SaTokenResult<()> {
+        let value = serde_json::to_string(list).map_err(SaTokenError::SerializationError)?;
+        self.storage
+            .set(key, &value, None)
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))
+    }
+
+    /// 将 refresh token 追加到用户索引（去重）
+    async fn append_user_index(&self, login_id: &str, refresh_token: &str) -> SaTokenResult<()> {
+        let key = self.user_index_key(login_id);
+        let mut list = self.load_string_list(&key).await?;
+        if !list.iter().any(|t| t == refresh_token) {
+            list.push(refresh_token.to_string());
+            self.save_string_list(&key, &list).await?;
+        }
+        Ok(())
+    }
+
+    /// 从用户索引移除 refresh token
+    async fn remove_user_index(&self, login_id: &str, refresh_token: &str) -> SaTokenResult<()> {
+        let key = self.user_index_key(login_id);
+        let mut list = self.load_string_list(&key).await?;
+        let before = list.len();
+        list.retain(|t| t != refresh_token);
+        if list.len() != before {
+            self.save_string_list(&key, &list).await?;
+        }
+        Ok(())
+    }
+
     /// Generate a new refresh token | 生成新的 refresh token
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `login_id` - User login ID | 用户登录ID
-    ///
-    /// # Returns | 返回
-    ///
-    /// Refresh token string | Refresh token 字符串
     pub fn generate(&self, login_id: &str) -> String {
-        // Format: refresh_TIMESTAMP_LOGINID_UUID
         format!(
             "refresh_{}_{}_{}",
             Utc::now().timestamp_millis(),
@@ -55,30 +93,17 @@ impl RefreshTokenManager {
     }
 
     /// Store refresh token with associated access token | 存储 refresh token 及其关联的访问令牌
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `refresh_token` - Refresh token | Refresh token
-    /// * `access_token` - Associated access token | 关联的访问令牌
-    /// * `login_id` - User login ID | 用户登录ID
-    /// * `extra_data` - Extra data from JWT claims (tenant_id, username, etc.)
     pub async fn store(
         &self,
         refresh_token: &str,
         access_token: &str,
         login_id: &str,
     ) -> SaTokenResult<()> {
-        self.store_with_extra(refresh_token, access_token, login_id, None).await
+        self.store_with_extra(refresh_token, access_token, login_id, None)
+            .await
     }
 
     /// Store refresh token with associated access token and extra data
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `refresh_token` - Refresh token | Refresh token
-    /// * `access_token` - Associated access token | 关联的访问令牌
-    /// * `login_id` - User login ID | 用户登录ID
-    /// * `extra_data` - Optional extra data to preserve across refresh
     pub async fn store_with_extra(
         &self,
         refresh_token: &str,
@@ -86,7 +111,7 @@ impl RefreshTokenManager {
         login_id: &str,
         extra_data: Option<&serde_json::Value>,
     ) -> SaTokenResult<()> {
-        let key = format!("sa:refresh:{}", refresh_token);
+        let key = self.refresh_key(refresh_token);
         let expire_time = if self.config.refresh_token_timeout > 0 {
             Some(Utc::now() + Duration::seconds(self.config.refresh_token_timeout))
         } else {
@@ -105,31 +130,29 @@ impl RefreshTokenManager {
         let value = obj.to_string();
 
         let ttl = if self.config.refresh_token_timeout > 0 {
-            Some(std::time::Duration::from_secs(self.config.refresh_token_timeout as u64))
+            Some(std::time::Duration::from_secs(
+                self.config.refresh_token_timeout as u64,
+            ))
         } else {
             None
         };
 
-        self.storage.set(&key, &value, ttl)
+        self.storage
+            .set(&key, &value, ttl)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
 
+        self.append_user_index(login_id, refresh_token).await?;
         Ok(())
     }
 
     /// Validate refresh token | 验证 refresh token
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `refresh_token` - Refresh token to validate | 要验证的 refresh token
-    ///
-    /// # Returns | 返回
-    ///
-    /// Associated login_id if valid | 如果有效则返回关联的 login_id
     pub async fn validate(&self, refresh_token: &str) -> SaTokenResult<String> {
-        let key = format!("sa:refresh:{}", refresh_token);
-        
-        let value_str = self.storage.get(&key)
+        let key = self.refresh_key(refresh_token);
+
+        let value_str = self
+            .storage
+            .get(&key)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
             .ok_or(SaTokenError::RefreshTokenNotFound)?;
@@ -137,18 +160,17 @@ impl RefreshTokenManager {
         let value: serde_json::Value = serde_json::from_str(&value_str)
             .map_err(|_| SaTokenError::RefreshTokenInvalidData)?;
 
-        let login_id = value["login_id"].as_str()
+        let login_id = value["login_id"]
+            .as_str()
             .ok_or(SaTokenError::RefreshTokenMissingLoginId)?
             .to_string();
 
-        // Check expiration if set
         if let Some(expire_str) = value["expire_time"].as_str() {
             let expire_time = DateTime::parse_from_rfc3339(expire_str)
                 .map_err(|_| SaTokenError::RefreshTokenInvalidExpireTime)?
                 .with_timezone(&Utc);
 
             if Utc::now() > expire_time {
-                // Delete expired refresh token
                 self.delete(refresh_token).await?;
                 return Err(SaTokenError::TokenExpired);
             }
@@ -159,23 +181,17 @@ impl RefreshTokenManager {
 
     /// Refresh access token using refresh token | 使用 refresh token 刷新访问令牌
     ///
-    /// # Arguments | 参数
-    ///
-    /// * `refresh_token` - Refresh token | Refresh token
-    ///
-    /// # Returns | 返回
-    ///
-    /// New access token and login_id | 新的访问令牌和 login_id
+    /// 生成新 access token 并回写 `{prefix}token:{token}` 存储，与 SaTokenManager 登录态对齐。
     pub async fn refresh_access_token(
         &self,
         refresh_token: &str,
     ) -> SaTokenResult<(TokenValue, String)> {
-        // Validate refresh token
         let login_id = self.validate(refresh_token).await?;
 
-        // Read stored refresh token data (contains extra_data)
-        let key = format!("sa:refresh:{}", refresh_token);
-        let value_str = self.storage.get(&key)
+        let key = self.refresh_key(refresh_token);
+        let value_str = self
+            .storage
+            .get(&key)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?
             .ok_or(SaTokenError::RefreshTokenNotFound)?;
@@ -183,24 +199,65 @@ impl RefreshTokenManager {
         let mut value: serde_json::Value = serde_json::from_str(&value_str)
             .map_err(|_| SaTokenError::RefreshTokenInvalidData)?;
 
-        // Generate new access token (with extra_data if present)
         let extra_data = value.get("extra_data").cloned();
         let new_access_token = match &extra_data {
-            Some(extra) => TokenGenerator::generate_with_login_id_and_extra(&self.config, &login_id, extra),
+            Some(extra) => {
+                TokenGenerator::generate_with_login_id_and_extra(&self.config, &login_id, extra)
+            }
             None => TokenGenerator::generate_with_login_id(&self.config, &login_id),
         };
 
-        // Update stored refresh token with new access token
+        // 构造并写入新的 TokenInfo（与 Manager 登录路径一致的存储键）
+        let mut token_info = TokenInfo::new(new_access_token.clone(), login_id.clone());
+        token_info.update_active_time();
+        token_info.refresh_token = Some(refresh_token.to_string());
+        if self.config.refresh_token_timeout > 0 {
+            token_info.refresh_token_expire_time = Some(
+                Utc::now() + Duration::seconds(self.config.refresh_token_timeout),
+            );
+        }
+        if let Some(extra) = &extra_data {
+            token_info.extra_data = Some(extra.clone());
+        }
+        if token_info.expire_time.is_none()
+            && let Some(timeout) = self.config.timeout_duration()
+        {
+            token_info.expire_time =
+                Some(Utc::now() + Duration::from_std(timeout).unwrap());
+        }
+
+        let token_key = self.config.make_key("token:", new_access_token.as_str());
+        let token_json = serde_json::to_string(&token_info)
+            .map_err(SaTokenError::SerializationError)?;
+        self.storage
+            .set(&token_key, &token_json, self.config.timeout_duration())
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
+
+        // 更新 login_id -> token 映射
+        let login_token_key = self.config.make_key("login:token:", &login_id);
+        self.storage
+            .set(
+                &login_token_key,
+                new_access_token.as_str(),
+                self.config.timeout_duration(),
+            )
+            .await
+            .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
+
         value["access_token"] = serde_json::json!(new_access_token.as_str());
         value["refreshed_at"] = serde_json::json!(Utc::now().to_rfc3339());
 
         let ttl = if self.config.refresh_token_timeout > 0 {
-            Some(std::time::Duration::from_secs(self.config.refresh_token_timeout as u64))
+            Some(std::time::Duration::from_secs(
+                self.config.refresh_token_timeout as u64,
+            ))
         } else {
             None
         };
 
-        self.storage.set(&key, &value.to_string(), ttl)
+        self.storage
+            .set(&key, &value.to_string(), ttl)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
 
@@ -208,35 +265,31 @@ impl RefreshTokenManager {
     }
 
     /// Delete refresh token | 删除 refresh token
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `refresh_token` - Refresh token to delete | 要删除的 refresh token
     pub async fn delete(&self, refresh_token: &str) -> SaTokenResult<()> {
-        let key = format!("sa:refresh:{}", refresh_token);
-        self.storage.delete(&key)
+        let key = self.refresh_key(refresh_token);
+
+        // 读取 login_id 以便清理用户索引
+        if let Ok(Some(value_str)) = self.storage.get(&key).await {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&value_str)
+                && let Some(login_id) = value["login_id"].as_str()
+            {
+                let _ = self.remove_user_index(login_id, refresh_token).await;
+            }
+        }
+
+        self.storage
+            .delete(&key)
             .await
             .map_err(|e| SaTokenError::StorageError(e.to_string()))?;
         Ok(())
     }
 
     /// Get all refresh tokens for a user | 获取用户的所有 refresh token
-    ///
-    /// Note: This requires storage backend to support prefix scanning
-    /// 注意：这需要存储后端支持前缀扫描
-    pub async fn get_user_refresh_tokens(&self, _login_id: &str) -> SaTokenResult<Vec<String>> {
-        // This is a placeholder - actual implementation depends on storage capabilities
-        // 这是一个占位符 - 实际实现取决于存储能力
-        // Most implementations would need to maintain a separate index
-        // 大多数实现需要维护一个单独的索引
-        Ok(vec![])
+    pub async fn get_user_refresh_tokens(&self, login_id: &str) -> SaTokenResult<Vec<String>> {
+        self.load_string_list(&self.user_index_key(login_id)).await
     }
 
     /// Revoke all refresh tokens for a user | 撤销用户的所有 refresh token
-    ///
-    /// # Arguments | 参数
-    ///
-    /// * `login_id` - User login ID | 用户登录ID
     pub async fn revoke_all_for_user(&self, login_id: &str) -> SaTokenResult<()> {
         let tokens = self.get_user_refresh_tokens(login_id).await?;
         for token in tokens {
@@ -284,31 +337,44 @@ mod tests {
         let refresh_token = refresh_mgr.generate("user_123");
         let access_token = "access_token_123";
 
-        // Store refresh token
-        refresh_mgr.store(&refresh_token, access_token, "user_123").await.unwrap();
+        refresh_mgr
+            .store(&refresh_token, access_token, "user_123")
+            .await
+            .unwrap();
 
-        // Validate refresh token
         let login_id = refresh_mgr.validate(&refresh_token).await.unwrap();
         assert_eq!(login_id, "user_123");
+
+        let tokens = refresh_mgr.get_user_refresh_tokens("user_123").await.unwrap();
+        assert_eq!(tokens, vec![refresh_token]);
     }
 
     #[tokio::test]
     async fn test_refresh_access_token() {
         let storage = Arc::new(MemoryStorage::new());
         let config = create_test_config();
-        let refresh_mgr = RefreshTokenManager::new(storage, config);
+        let refresh_mgr = RefreshTokenManager::new(storage.clone(), config.clone());
 
         let refresh_token = refresh_mgr.generate("user_123");
         let old_access_token = "old_access_token";
 
-        // Store refresh token
-        refresh_mgr.store(&refresh_token, old_access_token, "user_123").await.unwrap();
+        refresh_mgr
+            .store(&refresh_token, old_access_token, "user_123")
+            .await
+            .unwrap();
 
-        // Refresh access token
-        let (new_access_token, login_id) = refresh_mgr.refresh_access_token(&refresh_token).await.unwrap();
+        let (new_access_token, login_id) = refresh_mgr
+            .refresh_access_token(&refresh_token)
+            .await
+            .unwrap();
 
         assert_eq!(login_id, "user_123");
         assert_ne!(new_access_token.as_str(), old_access_token);
+
+        // 新 access token 应已写入 token 存储
+        let token_key = config.make_key("token:", new_access_token.as_str());
+        let stored = storage.get(&token_key).await.unwrap();
+        assert!(stored.is_some());
     }
 
     #[tokio::test]
@@ -318,14 +384,41 @@ mod tests {
         let refresh_mgr = RefreshTokenManager::new(storage, config);
 
         let refresh_token = refresh_mgr.generate("user_123");
-        refresh_mgr.store(&refresh_token, "access", "user_123").await.unwrap();
+        refresh_mgr
+            .store(&refresh_token, "access", "user_123")
+            .await
+            .unwrap();
 
-        // Delete refresh token
         refresh_mgr.delete(&refresh_token).await.unwrap();
 
-        // Validation should fail
         let result = refresh_mgr.validate(&refresh_token).await;
         assert!(result.is_err());
+
+        let tokens = refresh_mgr.get_user_refresh_tokens("user_123").await.unwrap();
+        assert!(tokens.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_revoke_all_for_user() {
+        let storage = Arc::new(MemoryStorage::new());
+        let config = create_test_config();
+        let refresh_mgr = RefreshTokenManager::new(storage, config);
+
+        let rt1 = refresh_mgr.generate("user_123");
+        let rt2 = refresh_mgr.generate("user_123");
+        refresh_mgr.store(&rt1, "a1", "user_123").await.unwrap();
+        refresh_mgr.store(&rt2, "a2", "user_123").await.unwrap();
+
+        refresh_mgr.revoke_all_for_user("user_123").await.unwrap();
+
+        assert!(refresh_mgr.validate(&rt1).await.is_err());
+        assert!(refresh_mgr.validate(&rt2).await.is_err());
+        assert!(
+            refresh_mgr
+                .get_user_refresh_tokens("user_123")
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
-
