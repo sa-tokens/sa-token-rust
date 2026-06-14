@@ -67,10 +67,6 @@ impl SaTokenStateBuilder {
         self
     }
 
-    pub fn token_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.config_builder = self.config_builder.token_prefix(prefix);
-        self
-    }
 
     pub fn jwt_secret_key(mut self, key: impl Into<String>) -> Self {
         self.config_builder = self.config_builder.jwt_secret_key(key);

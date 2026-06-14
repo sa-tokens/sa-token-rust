@@ -107,12 +107,7 @@ impl SaTokenStateBuilder {
         self
     }
     
-    /// 中文 | English
-    /// 设置 token 前缀 | Set token prefix
-    pub fn token_prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.config_builder = self.config_builder.token_prefix(prefix);
-        self
-    }
+
     
     /// 中文 | English
     /// 设置 JWT 密钥 | Set JWT secret key
