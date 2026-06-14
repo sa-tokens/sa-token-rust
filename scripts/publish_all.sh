@@ -37,10 +37,9 @@ fi
 publish "$WORKSPACE_ROOT/sa-token-adapter/Cargo.toml"
 publish "$WORKSPACE_ROOT/sa-token-storage-memory/Cargo.toml"
 publish "$WORKSPACE_ROOT/sa-token-storage-redis/Cargo.toml"
-publish "$WORKSPACE_ROOT/sa-token-storage-database/Cargo.toml"
 publish "$WORKSPACE_ROOT/sa-token-core/Cargo.toml"
 publish "$WORKSPACE_ROOT/sa-token-macro/Cargo.toml"
-
+publish "$WORKSPACE_ROOT/sa-token-storage-database/Cargo.toml"
 # 一体化插件
 publish "$WORKSPACE_ROOT/sa-token-plugin-axum/Cargo.toml"
 publish "$WORKSPACE_ROOT/sa-token-plugin-poem/Cargo.toml"
