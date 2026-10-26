@@ -16,7 +16,7 @@ Enable the matching feature on a framework plugin (for example `sa-token-plugin-
 | `full` | all of the above | Enable together |
 
 ```toml
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 # or depend on the storage crate directly
 # sa-token-storage-redis = "0.2.0"
 ```
@@ -85,10 +85,10 @@ Enable the feature on the crate you depend on:
 
 ```toml
 # root meta-crate
-sa-token = { version = "0.2.0", features = ["fory"] }
+sa-token = { version = "0.2.1", features = ["fory"] }
 
 # or core / adapter directly
-sa-token-core = { version = "0.2.0", features = ["fory"] }
+sa-token-core = { version = "0.2.1", features = ["fory"] }
 ```
 
 ```rust
@@ -176,7 +176,9 @@ let state = SaTokenState::builder()
     .build();
 ```
 
-You can also use `RedisStorage::builder().host(...).port(...).key_prefix(...).build().await?`.
+You can also use `RedisStorage::builder().host(...).port(...).pool_size(10).key_prefix(...).build().await?`.
+
+`pool_size` creates that many independent `ConnectionManager`s and round-robins commands (with up to 3 attempts and 10ms backoff). `RedisStorage::new` defaults to `pool_size = 10`. Use `new_with_pool(url, prefix, n)` when you need an explicit size. `pool_len()` reports the live pool size.
 
 URL examples: `redis://localhost:6379/0`, `redis://:mypass@localhost:6379/0`.
 

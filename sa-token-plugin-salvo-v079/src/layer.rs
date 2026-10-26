@@ -51,6 +51,10 @@ impl Handler for SaTokenLayer {
             SalvoCapturedRequest::capture(req, self.state.manager.config.token_name.as_str());
         let flow = run_auth_flow(&adapter, &self.state.manager, self.path_config.as_ref()).await;
 
+        if flow.should_service_unavailable() {
+            res.status_code(StatusCode::SERVICE_UNAVAILABLE);
+            return;
+        }
         if flow.should_reject() {
             res.status_code(StatusCode::UNAUTHORIZED);
             return;

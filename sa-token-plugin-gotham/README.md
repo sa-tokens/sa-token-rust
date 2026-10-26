@@ -11,6 +11,6 @@ Gotham integration for **sa-token-rust**（facade）。
 共享类型在 **`sa-token-plugin-common`**（本 crate 再导出）。`TokenValueWrapper` / `LoginIdWrapper` 在 **`sa-token-plugin-gotham-v074`** 的 **`wrapper.rs`**。
 
 ```toml
-sa-token-plugin-gotham = { version = "0.2.0", features = ["memory"] }
+sa-token-plugin-gotham = { version = "0.2.1", features = ["memory"] }
 gotham = "0.7"
 ```

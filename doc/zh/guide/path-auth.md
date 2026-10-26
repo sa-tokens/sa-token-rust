@@ -21,10 +21,14 @@ let config = PathAuthConfig::new()
         "/health".into(),
         "/public/**".into(),
     ])
+    // 纯公开接口：即使带了 token 也不打存储
+    .check_token_on_exclude(false)
     .validator(|login_id| {                 // 可选：额外校验 login_id
         !login_id.is_empty()
     });
 ```
+
+`check_token_on_exclude` 默认 `true`（exclude 路径仍做软登录）。纯公开接口请设为 `false`，避免请求头里的无效 token 去打 Redis。
 
 规则：`need_auth = 匹配 include 且不匹配 exclude`。
 
@@ -49,13 +53,24 @@ extract_token_from(req, config)
 ```rust
 use sa_token_core::router::run_auth_flow;
 
-// path_config = Some(...)：按 include/exclude 决定是否 401
+// path_config = Some(...)：按 include/exclude 决定 401 或 503
 // path_config = None：有 token 则校验并填上下文，不按路径拒绝
 let flow = run_auth_flow(&adapter, &manager, Some(&config)).await;
+if flow.should_service_unavailable() {
+    // 绑定层返回 503 —— 存储抖动，不是「已登出」
+}
 if flow.should_reject() {
-    // 绑定层返回 401
+    // 绑定层返回 401 —— 缺 token / 无效 / 过期
 }
 ```
+
+| 结果 | HTTP | 含义 |
+|------|------|------|
+| `should_reject` | 401 | 真鉴权失败 |
+| `should_service_unavailable` | 503 | 存储瞬时不可用 |
+| 二者皆否 | 继续 | 已登录或公开路径 |
+
+各框架绑定（Actix / Axum / Poem / Tide / Salvo / Ntex / Warp / Tonic）均先判 **503 再判 401**。
 
 `AuthFlowResult::run(fut)` 会在 `SaTokenContext::scope` 中执行后续 handler，供 `StpUtil` 无参 API 使用。
 
@@ -107,6 +122,8 @@ App::new().wrap(SaTokenMiddleware::with_path_auth(
 1. 忘记 `exclude` 登录接口 → 客户端永远 401。
 2. 只加 `#[sa_ignore]` 却未 `exclude` → 中间件仍拒绝。
 3. `include` 为空 → 任何路径都不会 `need_auth`（等于关掉路径强制登录）。
+4. exclude 默认软登录仍会打存储；Redis 抖动时可能 HTTP 200 但 `login_id` 为空——公开接口请 `check_token_on_exclude(false)`，或业务把无 login_id 当匿名默认值。
+5. 前端切勿把 503 当登出清会话；503 应静默重试，真 401 再清登录态。
 
 ## 相关链接
 

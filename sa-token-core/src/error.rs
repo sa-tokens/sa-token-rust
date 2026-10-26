@@ -320,6 +320,12 @@ impl SaTokenError {
             Self::PermissionDenied | Self::PermissionDeniedDetail(_) | Self::RoleDenied(_)
         )
     }
+
+    /// 是否为存储层故障（与「未登录 / token 无效」区分，供 PathAuth 返回 503）
+    /// Whether this is a storage-layer failure (PathAuth should map to 503, not 401).
+    pub fn is_storage_error(&self) -> bool {
+        matches!(self, Self::StorageError(_))
+    }
 }
 
 /// Application-level error messages | 应用层标准错误文案
@@ -344,6 +350,10 @@ pub mod messages {
 
     /// Authentication error | 认证错误
     pub const AUTH_ERROR: &str = "Authentication error";
+
+    /// 存储瞬时不可用（中间件 503 body）
+    /// Storage temporarily unavailable (middleware 503 body)
+    pub const SERVICE_UNAVAILABLE: &str = "Service temporarily unavailable";
 
     /// Permission required | 需要权限
     pub const PERMISSION_REQUIRED: &str = "Permission required";

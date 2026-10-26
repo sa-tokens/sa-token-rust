@@ -18,7 +18,7 @@ sa-token-storage-memory = { workspace = true, optional = true }
 sa-token-storage-redis = { workspace = true, optional = true }
 sa-token-storage-database = { workspace = true, optional = true }
 
-actix-web = "4.13.0"
+actix-web = "4.18.1"
 tokio = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }

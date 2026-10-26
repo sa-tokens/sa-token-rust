@@ -11,6 +11,6 @@ Ntex integration for **sa-token-rust**（facade）。
 共享类型在 **`sa-token-plugin-common`**（本 crate 再导出）。路径鉴权使用 **`SaTokenLayer::with_path_auth`** + **`PathAuthConfig`**。
 
 ```toml
-sa-token-plugin-ntex = { version = "0.2.0", features = ["memory"] }
+sa-token-plugin-ntex = { version = "0.2.1", features = ["memory"] }
 ntex = "2.12"
 ```

@@ -454,6 +454,12 @@ impl SaTokenManager {
         self.auth_service.get_token_info(token).await
     }
 
+    /// 鉴权推荐入口：单次读 + 条件续签（与 [`Self::get_token_info`] 相同）。
+    /// Preferred auth entry: one read + conditional renew (same as [`Self::get_token_info`]).
+    pub async fn load_and_touch(&self, token: &TokenValue) -> SaTokenResult<TokenInfo> {
+        self.get_token_info(token).await
+    }
+
     /// 按 login_type + login_id 读取当前映射 token
     /// Read the mapped token for login_type + login_id
     pub async fn get_token_by_login_id(

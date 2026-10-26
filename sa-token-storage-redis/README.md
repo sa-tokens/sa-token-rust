@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | port | u16 | 6379 | Redis port |
 | password | Option\<String\> | None | Redis password |
 | database | u8 | 0 | Database number (0-15) |
-| pool_size | u32 | 10 | Connection pool size |
+| pool_size | u32 | 10 | Number of independent `ConnectionManager`s (round-robin; `0` becomes `1`) |
 
 ## Author
 

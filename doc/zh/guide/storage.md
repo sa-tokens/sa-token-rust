@@ -16,7 +16,7 @@ Token、Session、权限缓存等都落在 `SaStorage` 上。0.2 官方提供 Me
 | `full` | 上述全部 | 一并启用 |
 
 ```toml
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 # 或单独依赖
 # sa-token-storage-redis = "0.2.0"
 ```
@@ -85,10 +85,10 @@ let debug = SharedSerializer::Json(JsonSerializer::with_config(JsonSerializerCon
 
 ```toml
 # 根 meta-crate
-sa-token = { version = "0.2.0", features = ["fory"] }
+sa-token = { version = "0.2.1", features = ["fory"] }
 
 # 或直接依赖 core / adapter
-sa-token-core = { version = "0.2.0", features = ["fory"] }
+sa-token-core = { version = "0.2.1", features = ["fory"] }
 ```
 
 ```rust
@@ -176,7 +176,9 @@ let state = SaTokenState::builder()
     .build();
 ```
 
-也可用 `RedisStorage::builder().host(...).port(...).key_prefix(...).build().await?`。
+也可用 `RedisStorage::builder().host(...).port(...).pool_size(10).key_prefix(...).build().await?`。
+
+`pool_size` 会创建对应数量的独立 `ConnectionManager` 并轮询执行命令（最多 3 次尝试、间隔 10ms）。`RedisStorage::new` 默认 `pool_size = 10`；需要显式大小时用 `new_with_pool(url, prefix, n)`。`pool_len()` 可查看当前池内连接数。
 
 URL 示例：`redis://localhost:6379/0`、`redis://:mypass@localhost:6379/0`。
 

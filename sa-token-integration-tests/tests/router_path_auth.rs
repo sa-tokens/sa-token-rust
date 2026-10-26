@@ -1,15 +1,23 @@
 //! 路径鉴权路由：`match_path` / `need_auth` / `extract_token` / `run_auth_flow`。
 //!
 //! 过期用灰盒拨钟，禁止 sleep。Layer 级 path_auth 见 `plugin_axum` / `plugin_actix`。
+//! 覆盖 PathAuth 假 401 根治：单次加载、存储失败→503、exclude 可跳过存储。
 
 mod common;
 
 use common::setup;
+use async_trait::async_trait;
 use sa_token_adapter::context::SaRequest;
+use sa_token_adapter::storage::{SaStorage, ScanPage, StorageError, StorageResult};
 use sa_token_core::router::{
-    PathAuthConfig, extract_token, match_any, match_path, need_auth, run_auth_flow,
+    PathAuthConfig, extract_token, match_any, match_path, need_auth, process_auth, run_auth_flow,
 };
+use sa_token_core::{SaTokenError, SaTokenManager};
+use sa_token_storage_memory::MemoryStorage;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 // ── Mock SaRequest ────────────────────────────────────────────────────────
 
@@ -302,4 +310,274 @@ async fn test_run_auth_flow_no_path_config_no_token_no_reject() {
         "no path config → no reject on missing token"
     );
     assert!(flow.login_id.is_none());
+}
+
+// ── PathAuth 假 401 根治：存储失败 / exclude 跳过 / 单次加载 ───────────────
+
+/// 恒失败的存储：模拟 Redis 瞬时不可用
+struct FailingStorage;
+
+#[async_trait]
+impl SaStorage for FailingStorage {
+    async fn get(&self, _key: &str) -> StorageResult<Option<String>> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn set(&self, _: &str, _: &str, _: Option<Duration>) -> StorageResult<()> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn delete(&self, _: &str) -> StorageResult<()> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn exists(&self, _: &str) -> StorageResult<bool> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn expire(&self, _: &str, _: Duration) -> StorageResult<()> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn ttl(&self, _: &str) -> StorageResult<Option<Duration>> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn clear(&self) -> StorageResult<()> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn set_if_absent(
+        &self,
+        _: &str,
+        _: &str,
+        _: Option<Duration>,
+    ) -> StorageResult<bool> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn get_del(&self, _: &str) -> StorageResult<Option<String>> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn compare_and_swap(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: &str,
+        _: Option<Duration>,
+    ) -> StorageResult<bool> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn compare_and_delete(&self, _: &str, _: &str) -> StorageResult<bool> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn list_push(
+        &self,
+        _: &str,
+        _: &str,
+        _: bool,
+        _: Option<Duration>,
+    ) -> StorageResult<usize> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn list_remove(&self, _: &str, _: &str) -> StorageResult<bool> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn list_range(
+        &self,
+        _: &str,
+        _: usize,
+        _: Option<usize>,
+    ) -> StorageResult<Vec<String>> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn list_len(&self, _: &str) -> StorageResult<usize> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+    async fn scan(&self, _: &str, _: u64, _: usize) -> StorageResult<ScanPage> {
+        Err(StorageError::OperationFailed("injected failure".into()))
+    }
+}
+
+/// 计数包装：统计 get/set 次数
+struct CountingMemory {
+    inner: MemoryStorage,
+    gets: AtomicUsize,
+    sets: AtomicUsize,
+}
+
+impl CountingMemory {
+    fn new() -> Self {
+        Self {
+            inner: MemoryStorage::new(),
+            gets: AtomicUsize::new(0),
+            sets: AtomicUsize::new(0),
+        }
+    }
+    fn get_count(&self) -> usize {
+        self.gets.load(Ordering::SeqCst)
+    }
+    fn set_count(&self) -> usize {
+        self.sets.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl SaStorage for CountingMemory {
+    async fn get(&self, key: &str) -> StorageResult<Option<String>> {
+        self.gets.fetch_add(1, Ordering::SeqCst);
+        self.inner.get(key).await
+    }
+    async fn set(&self, key: &str, value: &str, ttl: Option<Duration>) -> StorageResult<()> {
+        self.sets.fetch_add(1, Ordering::SeqCst);
+        self.inner.set(key, value, ttl).await
+    }
+    async fn delete(&self, key: &str) -> StorageResult<()> {
+        self.inner.delete(key).await
+    }
+    async fn exists(&self, key: &str) -> StorageResult<bool> {
+        self.inner.exists(key).await
+    }
+    async fn expire(&self, key: &str, ttl: Duration) -> StorageResult<()> {
+        self.inner.expire(key, ttl).await
+    }
+    async fn ttl(&self, key: &str) -> StorageResult<Option<Duration>> {
+        self.inner.ttl(key).await
+    }
+    async fn clear(&self) -> StorageResult<()> {
+        self.inner.clear().await
+    }
+    async fn set_if_absent(
+        &self,
+        key: &str,
+        value: &str,
+        ttl: Option<Duration>,
+    ) -> StorageResult<bool> {
+        self.inner.set_if_absent(key, value, ttl).await
+    }
+    async fn get_del(&self, key: &str) -> StorageResult<Option<String>> {
+        self.inner.get_del(key).await
+    }
+    async fn compare_and_swap(
+        &self,
+        key: &str,
+        expected: Option<&str>,
+        new_value: &str,
+        ttl: Option<Duration>,
+    ) -> StorageResult<bool> {
+        self.inner
+            .compare_and_swap(key, expected, new_value, ttl)
+            .await
+    }
+    async fn compare_and_delete(&self, key: &str, expected: &str) -> StorageResult<bool> {
+        self.inner.compare_and_delete(key, expected).await
+    }
+    async fn list_push(
+        &self,
+        key: &str,
+        member: &str,
+        unique: bool,
+        ttl: Option<Duration>,
+    ) -> StorageResult<usize> {
+        self.inner.list_push(key, member, unique, ttl).await
+    }
+    async fn list_remove(&self, key: &str, member: &str) -> StorageResult<bool> {
+        self.inner.list_remove(key, member).await
+    }
+    async fn list_range(
+        &self,
+        key: &str,
+        start: usize,
+        limit: Option<usize>,
+    ) -> StorageResult<Vec<String>> {
+        self.inner.list_range(key, start, limit).await
+    }
+    async fn list_len(&self, key: &str) -> StorageResult<usize> {
+        self.inner.list_len(key).await
+    }
+    async fn scan(&self, pattern: &str, cursor: u64, limit: usize) -> StorageResult<ScanPage> {
+        self.inner.scan(pattern, cursor, limit).await
+    }
+}
+
+#[tokio::test]
+async fn test_storage_failure_maps_to_service_unavailable_not_reject() {
+    let mgr = SaTokenManager::new(Arc::new(FailingStorage), setup::default_config());
+    let path_config = PathAuthConfig::new().include(vec!["/api/**".into()]);
+    let req = MockRequest::new("/api/user").with_header("sa-token", "any-token");
+    let flow = run_auth_flow(&req, &mgr, Some(&path_config)).await;
+    assert!(
+        flow.should_service_unavailable(),
+        "storage outage on protected path → 503"
+    );
+    assert!(
+        !flow.should_reject(),
+        "storage outage must not look like 401"
+    );
+}
+
+#[tokio::test]
+async fn test_exclude_check_token_on_exclude_false_skips_storage() {
+    let counter = Arc::new(CountingMemory::new());
+    let mgr = SaTokenManager::new(counter.clone(), setup::default_config());
+    let path_config = PathAuthConfig::new()
+        .include(vec!["/api/**".into()])
+        .exclude(vec!["/health".into()])
+        .check_token_on_exclude(false);
+    let before = counter.get_count();
+    let auth = process_auth(
+        "/health",
+        Some("garbage-token".into()),
+        &path_config,
+        &mgr,
+    )
+    .await;
+    assert_eq!(
+        counter.get_count(),
+        before,
+        "exclude + check_token_on_exclude(false) must not hit storage"
+    );
+    assert!(!auth.should_reject());
+    assert!(!auth.should_service_unavailable());
+    assert!(auth.login_id().is_none());
+}
+
+#[tokio::test]
+async fn test_process_auth_single_load_get_delta() {
+    let counter = Arc::new(CountingMemory::new());
+    // auto_renew 默认 false：有效 token 鉴权不应写存储
+    let mgr = SaTokenManager::new(counter.clone(), setup::default_config());
+    let id = setup::unique_login_id("single_load");
+    let token = mgr.login(&id).await.expect("login");
+    let gets_after_login = counter.get_count();
+    let sets_after_login = counter.set_count();
+
+    let path_config = PathAuthConfig::new().include(vec!["/api/**".into()]);
+    let auth = process_auth("/api/me", Some(token.as_str().to_string()), &path_config, &mgr).await;
+
+    assert!(auth.is_valid);
+    assert!(!auth.should_reject());
+    let get_delta = counter.get_count() - gets_after_login;
+    let set_delta = counter.set_count() - sets_after_login;
+    // mapping marker + token body = 2 reads；无续签则 0 writes
+    assert_eq!(get_delta, 2, "process_auth must load once (mapping+token)");
+    assert_eq!(set_delta, 0, "auto_renew=false → no renew write");
+}
+
+#[tokio::test]
+async fn test_is_storage_error_helper() {
+    let err = SaTokenError::StorageError("boom".into());
+    assert!(err.is_storage_error());
+    assert!(!SaTokenError::TokenExpired.is_storage_error());
+}
+
+#[tokio::test]
+async fn test_exclude_storage_failure_does_not_503() {
+    let mgr = SaTokenManager::new(Arc::new(FailingStorage), setup::default_config());
+    let path_config = PathAuthConfig::new()
+        .include(vec!["/api/**".into()])
+        .exclude(vec!["/health".into()]);
+    // exclude 默认仍软校验：存储失败但不 need_auth → 不 401 也不 503
+    let auth = process_auth(
+        "/health",
+        Some("any".into()),
+        &path_config,
+        &mgr,
+    )
+    .await;
+    assert!(!auth.need_auth);
+    assert!(!auth.should_reject());
+    assert!(!auth.should_service_unavailable());
 }

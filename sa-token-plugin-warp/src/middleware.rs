@@ -18,7 +18,11 @@ pub fn require_auth() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp_03::any()
         .and(warp_03::filters::ext::get::<crate::filter::TokenData>())
         .and_then(|data: crate::filter::TokenData| async move {
-            if data.flow.should_reject() || data.flow.login_id.is_none() {
+            if data.flow.should_service_unavailable() {
+                Err(warp_03::reject::custom(
+                    crate::extractor::ServiceUnavailableError,
+                ))
+            } else if data.flow.should_reject() || data.flow.login_id.is_none() {
                 Err(warp_03::reject::custom(crate::extractor::AuthError))
             } else {
                 Ok(())

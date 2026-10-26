@@ -33,8 +33,8 @@ use sa_token_plugin_axum::*;
 Optional on the root / core crates: `fory` enables binary `ForySerializer` for storage payloads. Default encoding is JSON — see [Storage](/guide/storage.md).
 
 ```toml
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
-# sa-token = { version = "0.2.0", features = ["fory"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
+# sa-token = { version = "0.2.1", features = ["fory"] }
 ```
 
 ### Choosing a plugin

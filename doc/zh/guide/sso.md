@@ -82,7 +82,7 @@ sso.is_allowed_origin("https://app.example");
 在 `sa-token-core` 上启用：
 
 ```toml
-sa-token-core = { version = "0.2.0", features = ["sso-http"] }
+sa-token-core = { version = "0.2.1", features = ["sso-http"] }
 ```
 
 提供：

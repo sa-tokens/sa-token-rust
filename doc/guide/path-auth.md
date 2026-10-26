@@ -21,10 +21,14 @@ let config = PathAuthConfig::new()
         "/health".into(),
         "/public/**".into(),
     ])
+    // Public routes: skip storage entirely even if the client sends a token
+    .check_token_on_exclude(false)
     .validator(|login_id| {                 // optional extra login_id check
         !login_id.is_empty()
     });
 ```
+
+`check_token_on_exclude` defaults to `true` (soft-login on exclude paths). Set `false` for pure public endpoints so a stray Authorization header never hits Redis.
 
 Rule: `need_auth = matches include AND does not match exclude`.
 
@@ -49,13 +53,24 @@ extract_token_from(req, config)
 ```rust
 use sa_token_core::router::run_auth_flow;
 
-// Some(config): include/exclude may produce 401
+// Some(config): include/exclude may produce 401 or 503
 // None: validate token if present; never reject by path
 let flow = run_auth_flow(&adapter, &manager, Some(&config)).await;
+if flow.should_service_unavailable() {
+    // binding returns 503 — storage blip, not "logged out"
+}
 if flow.should_reject() {
-    // binding returns 401
+    // binding returns 401 — missing / invalid / expired token
 }
 ```
+
+| Outcome | HTTP | Meaning |
+|---------|------|---------|
+| `should_reject` | 401 | Real auth failure |
+| `should_service_unavailable` | 503 | Storage temporarily unavailable |
+| neither | continue | Logged in or public path |
+
+Bindings (Actix / Axum / Poem / Tide / Salvo / Ntex / Warp / Tonic) check **503 before 401**.
 
 `AuthFlowResult::run(fut)` runs the handler inside `SaTokenContext::scope` so `StpUtil` parameterless APIs work.
 
@@ -107,6 +122,8 @@ App::new().wrap(SaTokenMiddleware::with_path_auth(
 1. Forgetting to `exclude` login → clients always get 401.
 2. Only `#[sa_ignore]` without `exclude` → middleware still rejects.
 3. Empty `include` → no path ever `need_auth` (path enforcement off).
+4. Soft-login on exclude (`check_token_on_exclude=true`) still hits storage; Redis jitter can leave `login_id` empty while HTTP stays 200 — use `check_token_on_exclude(false)` or treat missing login as anonymous defaults.
+5. Frontends must **not** clear the session on 503; retry silently. Clear login state only on real 401.
 
 ## Related
 

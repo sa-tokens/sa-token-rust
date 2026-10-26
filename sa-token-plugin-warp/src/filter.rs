@@ -10,7 +10,7 @@ use sa_token_core::router::{AuthFlowResult, PathAuthConfig, run_auth_flow};
 use sa_token_core::token::TokenValue;
 use sa_token_plugin_common::{SaLoginId, SaTokenState};
 
-use crate::extractor::AuthError;
+use crate::extractor::{AuthError, ServiceUnavailableError};
 use crate::snapshot::WarpRequestSnapshot;
 
 /// Request context data (for handler extraction).
@@ -40,13 +40,15 @@ pub fn sa_token_filter(
         .and_then(run_flow)
 }
 
-/// Login-enforcing filter: returns 401 rejection when `should_reject`.
+/// Login-enforcing filter: 503 on storage outage, 401 when `should_reject`.
 pub fn sa_check_login_filter(
     state: SaTokenState,
     path_config: Option<PathAuthConfig>,
 ) -> impl Filter<Extract = (TokenData,), Error = Rejection> + Clone {
     sa_token_filter(state, path_config).and_then(|data: TokenData| async move {
-        if data.flow.should_reject() {
+        if data.flow.should_service_unavailable() {
+            Err(warp::reject::custom(ServiceUnavailableError))
+        } else if data.flow.should_reject() {
             Err(warp::reject::custom(AuthError))
         } else {
             Ok(data)

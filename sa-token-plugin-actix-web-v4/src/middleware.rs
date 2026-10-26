@@ -99,6 +99,12 @@ where
             let adapter = ActixRequestAdapter::new(req.request());
             let flow = run_auth_flow(&adapter, &state.manager, path_config.as_ref()).await;
 
+            // 先处理存储故障，避免被当成未登录
+            if flow.should_service_unavailable() {
+                return Err(actix_web::error::ErrorServiceUnavailable(
+                    rejection::service_unavailable_json().to_string(),
+                ));
+            }
             if flow.should_reject() {
                 return Err(ErrorUnauthorized(
                     rejection::unauthorized_json().to_string(),

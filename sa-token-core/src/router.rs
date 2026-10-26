@@ -90,6 +90,10 @@ pub struct PathAuthConfig {
     /// Optional login ID validator function
     /// 可选的登录ID验证函数
     validator: Option<LoginIdValidator>,
+    /// exclude 路径是否仍尝试解析/校验 token（软登录）。
+    /// `true`=兼容旧行为；`false`=纯公开，完全跳过存储。
+    /// Whether exclude paths still soft-validate a token (default `true`).
+    check_token_on_exclude: bool,
 }
 
 impl std::fmt::Debug for PathAuthConfig {
@@ -106,6 +110,7 @@ impl PathAuthConfig {
             include: Vec::new(),
             exclude: Vec::new(),
             validator: None,
+            check_token_on_exclude: true,
         }
     }
 
@@ -133,6 +138,13 @@ impl PathAuthConfig {
         self
     }
 
+    /// 设置 exclude 路径是否做软登录校验（默认 true）
+    /// Whether exclude paths still hit storage for soft login (default `true`).
+    pub fn check_token_on_exclude(mut self, enabled: bool) -> Self {
+        self.check_token_on_exclude = enabled;
+        self
+    }
+
     /// Check if a path requires authentication
     /// 检查路径是否需要鉴权
     pub fn check(&self, path: &str) -> bool {
@@ -157,6 +169,19 @@ impl Default for PathAuthConfig {
 use crate::context::{RequestAuthMeta, SaTokenContext};
 use crate::{SaTokenManager, TokenValue, token::TokenInfo};
 
+/// 鉴权失败分类：区分「未登录」与「存储挂了」
+/// Auth failure kind: distinguish missing/invalid token from storage outage.
+#[derive(Debug, Clone)]
+pub enum AuthFailureKind {
+    /// 请求未携带 token | Request has no token
+    MissingToken,
+    /// token 无效 / 过期 / 冻结 / 踢下线 / validator 失败等
+    /// Token invalid, expired, frozen, kicked, or validator rejected
+    InvalidToken,
+    /// Redis 等存储瞬时不可用 | Storage temporarily unavailable
+    StorageUnavailable(String),
+}
+
 /// Authentication result after processing
 /// 处理后的鉴权结果
 pub struct AuthResult {
@@ -172,6 +197,8 @@ pub struct AuthResult {
     /// Whether the token is valid
     /// token是否有效
     pub is_valid: bool,
+    /// 失败原因；成功为 None | Failure reason; `None` on success
+    pub failure: Option<AuthFailureKind>,
 }
 
 impl std::fmt::Debug for AuthResult {
@@ -181,10 +208,23 @@ impl std::fmt::Debug for AuthResult {
 }
 
 impl AuthResult {
-    /// Check if the request should be rejected
-    /// 检查请求是否应该被拒绝
+    /// 路径需要登录且确认为鉴权失败（非存储故障）→ 绑定层应 401
+    /// Path requires login and failure is auth (not storage) → binding should 401
     pub fn should_reject(&self) -> bool {
-        self.need_auth && (!self.is_valid || self.token.is_none())
+        if !self.need_auth || self.is_valid {
+            return false;
+        }
+        match &self.failure {
+            Some(AuthFailureKind::StorageUnavailable(_)) => false,
+            Some(AuthFailureKind::MissingToken | AuthFailureKind::InvalidToken) => true,
+            None => true,
+        }
+    }
+
+    /// 路径需要登录但存储不可用 → 绑定层应 503
+    /// Path requires login but storage is down → binding should 503
+    pub fn should_service_unavailable(&self) -> bool {
+        self.need_auth && matches!(self.failure, Some(AuthFailureKind::StorageUnavailable(_)))
     }
 
     /// Get the login ID from token info
@@ -194,12 +234,8 @@ impl AuthResult {
     }
 }
 
-/// Process authentication for a request path
-/// 处理请求路径的鉴权
-///
-/// This function checks if the path requires authentication, validates the token,
-/// and returns an AuthResult with all relevant information.
-/// 此函数检查路径是否需要鉴权，验证token，并返回包含所有相关信息的AuthResult。
+/// Process authentication for a request path (single `load_and_touch`).
+/// 处理请求路径的鉴权（单次 `load_and_touch`）。
 ///
 /// # Arguments
 /// - `path`: The request path
@@ -213,35 +249,49 @@ pub async fn process_auth(
     manager: &SaTokenManager,
 ) -> AuthResult {
     let need_auth = config.check(path);
-
     let token = token_str.map(TokenValue::new);
 
-    let (is_valid, token_info) = if let Some(ref t) = token {
-        let valid = manager.is_valid(t).await;
-        let info = if valid {
-            manager.get_token_info(t).await.ok()
-        } else {
-            None
+    // exclude 且配置为跳过校验：不打存储
+    if !need_auth && !config.check_token_on_exclude {
+        return AuthResult {
+            need_auth,
+            token,
+            token_info: None,
+            is_valid: false,
+            failure: None,
         };
-        (valid, info)
-    } else {
-        (false, None)
+    }
+
+    let (mut is_valid, token_info, mut failure) = match &token {
+        None => (false, None, Some(AuthFailureKind::MissingToken)),
+        Some(t) => match manager.load_and_touch(t).await {
+            Ok(info) => (true, Some(info), None),
+            Err(e) if e.is_storage_error() => (
+                false,
+                None,
+                Some(AuthFailureKind::StorageUnavailable(e.to_string())),
+            ),
+            Err(_) => (false, None, Some(AuthFailureKind::InvalidToken)),
+        },
     };
 
-    let is_valid = is_valid
-        && if need_auth {
-            token_info
-                .as_ref()
-                .is_some_and(|info| config.validate_login_id(info.login_id.as_ref()))
-        } else {
-            true
-        };
+    // 仅强制鉴权路径跑自定义 login_id 校验
+    if need_auth && is_valid {
+        let ok = token_info
+            .as_ref()
+            .is_some_and(|info| config.validate_login_id(info.login_id.as_ref()));
+        if !ok {
+            is_valid = false;
+            failure = Some(AuthFailureKind::InvalidToken);
+        }
+    }
 
     AuthResult {
         need_auth,
         token,
         token_info,
         is_valid,
+        failure,
     }
 }
 
@@ -301,6 +351,12 @@ impl AuthFlowResult {
         self.auth.should_reject()
     }
 
+    /// `true` if the binding should respond **503** (path requires auth but storage is unavailable).
+    /// 若路径要求鉴权但存储不可用，绑定层应返回 **503**，则返回 `true`。
+    pub fn should_service_unavailable(&self) -> bool {
+        self.auth.should_service_unavailable()
+    }
+
     /// Run `fut` with [`SaTokenContext::scope`] using this flow's [`AuthFlowResult::context`] (await-safe).
     /// 用本流的 [`AuthFlowResult::context`] 调用 [`SaTokenContext::scope`] 执行 `fut`（可跨 await）。
     ///
@@ -333,32 +389,34 @@ pub async fn run_auth_flow<R: SaRequest>(
 
     let (auth, ctx) = match path_config {
         Some(cfg) => {
-            // Path-based rules: may set need_auth / should_reject.
-            // 基于路径的规则：可产生 need_auth / should_reject。
+            // Path-based rules: may set need_auth / should_reject / should_service_unavailable.
+            // 基于路径的规则：可产生 need_auth / should_reject / should_service_unavailable。
             let auth = process_auth(path.as_str(), token_str.clone(), cfg, manager).await;
             let ctx = create_context(&auth, auth_meta);
             (auth, ctx)
         }
         None => {
-            // No path config: only validate token when present.
-            // 无路径配置：仅在有 token 时做有效性校验。
+            // 无路径配置：有 token 则单次校验并注入；永不 reject / 503
             let token = token_str.map(TokenValue::new);
-            let (is_valid, token_info) = if let Some(ref t) = token {
-                let valid = manager.is_valid(t).await;
-                let info = if valid {
-                    manager.get_token_info(t).await.ok()
-                } else {
-                    None
-                };
-                (valid, info)
+            let (is_valid, token_info, failure) = if let Some(ref t) = token {
+                match manager.load_and_touch(t).await {
+                    Ok(info) => (true, Some(info), None),
+                    Err(e) if e.is_storage_error() => (
+                        false,
+                        None,
+                        Some(AuthFailureKind::StorageUnavailable(e.to_string())),
+                    ),
+                    Err(_) => (false, None, Some(AuthFailureKind::InvalidToken)),
+                }
             } else {
-                (false, None)
+                (false, None, Some(AuthFailureKind::MissingToken))
             };
             let auth = AuthResult {
                 need_auth: false,
                 token: token.clone(),
                 token_info,
                 is_valid,
+                failure,
             };
             let ctx = create_context(&auth, auth_meta);
             (auth, ctx)

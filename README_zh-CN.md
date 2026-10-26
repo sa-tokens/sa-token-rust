@@ -187,13 +187,13 @@ use sa_token_plugin_axum::*;  // ✨ 你需要的一切！
 **通过 features 选择存储后端：**
 ```toml
 # Redis 存储
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 
 # 多个存储后端
-sa-token-plugin-axum = { version = "0.2.0", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["memory", "redis"] }
 
 # 所有存储后端
-sa-token-plugin-axum = { version = "0.2.0", features = ["full"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["full"] }
 ```
 
 **可用的 features：**
@@ -224,10 +224,10 @@ sa-token-plugin-axum = { version = "0.2.0", features = ["full"] }
 
 ```toml
 # Axum 0.8 + Redis
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 
 # Actix-web 4.x 门面（默认 v4 + memory）+ Redis
-sa-token-plugin-actix-web = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-actix-web = { version = "0.2.1", features = ["redis"] }
 
 # Rocket 0.5 / Salvo / Ntex / Gotham — 默认已与当前支持线对齐
 sa-token-plugin-rocket = "0.2.0"
@@ -283,7 +283,7 @@ async fn main() {
 **添加 Redis feature 到依赖：**
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 ```
 
 **使用简化导入：**
@@ -916,7 +916,15 @@ warp::serve(routes)
 
 ## 📋 版本历史
 
-### 版本 0.1.18（当前版本）
+### 版本 0.2.0（当前版本）
+
+**PathAuth 加固（瞬时假 401 / 存储抖动）：**
+- 🛡️ **单次加载鉴权**：`process_auth` / `run_auth_flow` 只调用一次 `load_and_touch`（不再 `is_valid` + `get_token_info` 双倍 IO）
+- 🚦 **401 与 503 分流**：存储故障 → `should_service_unavailable`（HTTP 503 / gRPC Unavailable）；真鉴权失败仍为 401
+- 🚪 **`check_token_on_exclude(false)`**：纯公开路径即使带 token 也不访问存储
+- 🔄 **Redis 连接池**：`RedisConfig.pool_size` 创建 N 个 `ConnectionManager`，轮询 + 命令重试
+
+### 版本 0.1.18
 
 **授权数据持久化到 `SaStorage`：**
 - 🗄️ **权限与角色改存 `SaStorage`**：`StpUtil` 的权限/角色 API 现在委托给 `SaTokenManager`，由其读写存储后端，不再使用进程内 `HashMap`。数据可在重启后保留，并在使用分布式存储（如 Redis）时跨节点共享。

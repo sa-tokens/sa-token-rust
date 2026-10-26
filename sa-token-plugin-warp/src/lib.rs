@@ -84,6 +84,7 @@ pub mod snapshot;
 pub use adapter::{WarpRequestAdapter, WarpResponseAdapter};
 pub use extractor::{
     AuthError, LoginIdExtractor, OptionalSaTokenExtractor, PermissionError, RoleError,
+    ServiceUnavailableError,
     SaTokenExtractor, handle_rejection,
 };
 pub use filter::{

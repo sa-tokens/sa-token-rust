@@ -65,6 +65,11 @@ where
         let adapter = PoemRequestAdapter::new(&req);
         let flow = run_auth_flow(&adapter, &self.state.manager, self.path_config.as_ref()).await;
 
+        if flow.should_service_unavailable() {
+            return Err(poem_03::Error::from_status(
+                poem_03::http::StatusCode::SERVICE_UNAVAILABLE,
+            ));
+        }
         if flow.should_reject() {
             return Err(poem_03::Error::from_status(
                 poem_03::http::StatusCode::UNAUTHORIZED,

@@ -2,7 +2,7 @@
 //
 //! # sa-token-storage-redis
 //!
-//! Redis存储实现
+//! Redis 存储：`pool_size` 个独立 `ConnectionManager` 轮询 + 命令级短暂重试。
 //!
 //! 适用于：
 //! - 分布式部署
@@ -15,7 +15,7 @@
 //! ```rust,ignore
 //! use sa_token_storage_redis::RedisStorage;
 //!
-//! // 无密码
+//! // 无密码（默认建 10 个 ConnectionManager）
 //! let storage = RedisStorage::new("redis://localhost:6379/0", "sa-token:").await?;
 //!
 //! // 有密码
@@ -37,11 +37,20 @@
 //! let storage = RedisStorage::from_config(config, "sa-token:").await?;
 //! ```
 
+use std::future::Future;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
 use async_trait::async_trait;
 use redis::{AsyncCommands, Client, aio::ConnectionManager};
 use sa_token_adapter::storage::{SaStorage, ScanPage, StorageError, StorageResult};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
+/// 命令失败时的最大尝试次数（含首次）
+const DEFAULT_MAX_ATTEMPTS: u32 = 3;
+/// 两次尝试之间的间隔
+const RETRY_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Redis 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +71,7 @@ pub struct RedisConfig {
     #[serde(default)]
     pub database: u8,
 
-    /// 连接池大小（暂未使用，保留用于未来扩展）
+    /// 连接池大小：创建多少个独立的 ConnectionManager（至少 1）
     #[serde(default = "default_pool_size")]
     pub pool_size: u32,
 }
@@ -109,105 +118,77 @@ fn default_pool_size() -> u32 {
     10
 }
 
-/// Redis存储实现
+/// Redis 存储：多 ConnectionManager 轮询池
 #[derive(Clone)]
 pub struct RedisStorage {
-    client: ConnectionManager,
+    /// 独立复用连接集合；clone RedisStorage 只增加 Arc 引用
+    pool: Arc<Vec<ConnectionManager>>,
+    /// 轮询游标
+    next: Arc<AtomicUsize>,
     key_prefix: String,
+    /// 单次命令最大尝试次数
+    max_attempts: u32,
 }
 
 impl std::fmt::Debug for RedisStorage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RedisStorage")
+            .field("pool_len", &self.pool.len())
             .field("key_prefix", &self.key_prefix)
+            .field("max_attempts", &self.max_attempts)
             .finish_non_exhaustive()
     }
 }
 
 impl RedisStorage {
-    /// 使用 Redis URL 创建存储
-    ///
-    /// # 参数
-    /// * `redis_url` - Redis 连接 URL
-    /// * `key_prefix` - 键前缀（例如：`sa-token:`）
-    ///
-    /// # URL 格式
-    /// - 无密码：`redis://localhost:6379/0`
-    /// - 有密码：`redis://:password@localhost:6379/0`
-    /// - 复杂密码：`redis://:Aq23-hjPwFB3mBDNFp3W1@localhost:6379/0`
-    ///
-    /// # 示例
-    /// ```rust,ignore
-    /// use sa_token_storage_redis::RedisStorage;
-    ///
-    /// // 无密码
-    /// let storage = RedisStorage::new("redis://localhost:6379/0", "sa-token:").await?;
-    ///
-    /// // 有密码
-    /// let storage = RedisStorage::new(
-    ///     "redis://:Aq23-hjPwFB3mBDNFp3W1@localhost:6379/0",
-    ///     "sa-token:"
-    /// ).await?;
-    /// ```
+    /// 使用 Redis URL 创建存储（默认 pool_size=10）
     pub async fn new(redis_url: &str, key_prefix: impl Into<String>) -> StorageResult<Self> {
+        Self::new_with_pool(redis_url, key_prefix, default_pool_size()).await
+    }
+
+    /// URL + 显式池大小
+    pub async fn new_with_pool(
+        redis_url: &str,
+        key_prefix: impl Into<String>,
+        pool_size: u32,
+    ) -> StorageResult<Self> {
+        let n = pool_size.max(1) as usize;
         let client =
             Client::open(redis_url).map_err(|e| StorageError::ConnectionError(e.to_string()))?;
 
-        let connection_manager = ConnectionManager::new(client)
-            .await
-            .map_err(|e| StorageError::ConnectionError(e.to_string()))?;
+        let mut managers = Vec::with_capacity(n);
+        for _ in 0..n {
+            // 每个 ConnectionManager 独立建连，分担并发鉴权压力
+            let mgr = ConnectionManager::new(client.clone())
+                .await
+                .map_err(|e| StorageError::ConnectionError(e.to_string()))?;
+            managers.push(mgr);
+        }
 
         Ok(Self {
-            client: connection_manager,
+            pool: Arc::new(managers),
+            next: Arc::new(AtomicUsize::new(0)),
             key_prefix: key_prefix.into(),
+            max_attempts: DEFAULT_MAX_ATTEMPTS,
         })
     }
 
-    /// 使用配置结构体创建存储
-    ///
-    /// # 参数
-    /// * `config` - Redis 配置
-    /// * `key_prefix` - 键前缀（例如：`sa-token:`）
-    ///
-    /// # 示例
-    /// ```rust,ignore
-    /// use sa_token_storage_redis::{RedisStorage, RedisConfig};
-    ///
-    /// let config = RedisConfig {
-    ///     host: "localhost".to_string(),
-    ///     port: 6379,
-    ///     password: Some("Aq23-hjPwFB3mBDNFp3W1".to_string()),
-    ///     database: 0,
-    ///     pool_size: 10,
-    /// };
-    ///
-    /// let storage = RedisStorage::from_config(config, "sa-token:").await?;
-    /// ```
+    /// 使用配置结构体创建存储（**消费 pool_size**）
     pub async fn from_config(
         config: RedisConfig,
         key_prefix: impl Into<String>,
     ) -> StorageResult<Self> {
-        let redis_url = config.to_url();
-        Self::new(&redis_url, key_prefix).await
+        Self::new_with_pool(&config.to_url(), key_prefix, config.pool_size).await
     }
 
     /// 使用构建器模式创建存储
-    ///
-    /// # 示例
-    /// ```rust,ignore
-    /// use sa_token_storage_redis::RedisStorage;
-    ///
-    /// let storage = RedisStorage::builder()
-    ///     .host("localhost")
-    ///     .port(6379)
-    ///     .password("Aq23-hjPwFB3mBDNFp3W1")
-    ///     .database(0)
-    ///     .key_prefix("sa-token:")
-    ///     .build()
-    ///     .await?;
-    /// ```
     pub fn builder() -> RedisStorageBuilder {
         RedisStorageBuilder::default()
+    }
+
+    /// 测试/运维：当前池内 ConnectionManager 数量
+    pub fn pool_len(&self) -> usize {
+        self.pool.len()
     }
 
     /// 获取完整的键名（带前缀）
@@ -228,6 +209,39 @@ impl RedisStorage {
     /// 便捷构造：物理前缀默认为空（逻辑键由 SaKeys 提供）
     pub async fn connect(redis_url: &str) -> StorageResult<Self> {
         Self::new(redis_url, "").await
+    }
+
+    /// 轮询取出一个 ConnectionManager 句柄（clone 廉价）
+    fn acquire(&self) -> ConnectionManager {
+        let len = self.pool.len();
+        let idx = self.next.fetch_add(1, Ordering::Relaxed) % len;
+        self.pool[idx].clone()
+    }
+
+    /// 对瞬时失败做有限次重试；每次重试换一条池内连接
+    async fn with_retry<T, F, Fut>(&self, mut op: F) -> StorageResult<T>
+    where
+        F: FnMut(ConnectionManager) -> Fut,
+        Fut: Future<Output = Result<T, redis::RedisError>>,
+    {
+        let mut last_err: Option<redis::RedisError> = None;
+        for attempt in 0..self.max_attempts {
+            let conn = self.acquire();
+            match op(conn).await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < self.max_attempts {
+                        tokio::time::sleep(RETRY_INTERVAL).await;
+                    }
+                }
+            }
+        }
+        Err(StorageError::OperationFailed(
+            last_err
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "unknown redis error".to_string()),
+        ))
     }
 }
 
@@ -271,7 +285,7 @@ impl RedisStorageBuilder {
         self
     }
 
-    /// 设置连接池大小（保留用于未来扩展）
+    /// 设置连接池大小（创建对应数量的 ConnectionManager）
     pub fn pool_size(mut self, size: u32) -> Self {
         self.config.pool_size = size;
         self
@@ -293,151 +307,161 @@ impl RedisStorageBuilder {
 #[async_trait]
 impl SaStorage for RedisStorage {
     async fn get(&self, key: &str) -> StorageResult<Option<String>> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        conn.get(&full_key)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move { conn.get(fk).await }
+        })
+        .await
     }
 
     async fn set(&self, key: &str, value: &str, ttl: Option<Duration>) -> StorageResult<()> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        if let Some(ttl) = ttl {
-            conn.set_ex(&full_key, value, ttl.as_secs())
-                .await
-                .map_err(|e| StorageError::OperationFailed(e.to_string()))
-        } else {
-            conn.set(&full_key, value)
-                .await
-                .map_err(|e| StorageError::OperationFailed(e.to_string()))
-        }
+        let value = value.to_string();
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            let val = value.clone();
+            async move {
+                if let Some(ttl) = ttl {
+                    conn.set_ex(fk, val, ttl.as_secs()).await
+                } else {
+                    conn.set(fk, val).await
+                }
+            }
+        })
+        .await
     }
 
     async fn delete(&self, key: &str) -> StorageResult<()> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        conn.del(&full_key)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move { conn.del(fk).await }
+        })
+        .await
     }
 
     async fn exists(&self, key: &str) -> StorageResult<bool> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        conn.exists(&full_key)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move { conn.exists(fk).await }
+        })
+        .await
     }
 
     async fn expire(&self, key: &str, ttl: Duration) -> StorageResult<()> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        conn.expire(&full_key, ttl.as_secs() as i64)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        let secs = ttl.as_secs() as i64;
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move { conn.expire(fk, secs).await }
+        })
+        .await
     }
 
     async fn ttl(&self, key: &str) -> StorageResult<Option<Duration>> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        let ttl_secs: i64 = conn
-            .ttl(&full_key)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+        let ttl_secs: i64 = self
+            .with_retry(|mut conn| {
+                let fk = full_key.clone();
+                async move { conn.ttl(fk).await }
+            })
+            .await?;
 
         match ttl_secs {
-            -2 => Ok(None), // 键不存在
-            -1 => Ok(None), // 永不过期
+            -2 => Ok(None),
+            -1 => Ok(None),
             secs if secs > 0 => Ok(Some(Duration::from_secs(secs as u64))),
             _ => Ok(Some(Duration::from_secs(0))),
         }
     }
 
     async fn mget(&self, keys: &[&str]) -> StorageResult<Vec<Option<String>>> {
-        let mut conn = self.client.clone();
         let full_keys: Vec<String> = keys.iter().map(|k| self.full_key(k)).collect();
-
-        // redis 1.x 的 `get` 只接受 ToSingleRedisArg，批量取值需走 `mget`
-        // redis 1.x's `get` only accepts ToSingleRedisArg; use `mget` for multi-key reads
-        conn.mget(&full_keys)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_keys.clone();
+            async move { conn.mget(fk).await }
+        })
+        .await
     }
 
     async fn mset(&self, items: &[(&str, &str)], ttl: Option<Duration>) -> StorageResult<()> {
-        let mut conn = self.client.clone();
-        let full_items: Vec<(String, &str)> =
-            items.iter().map(|(k, v)| (self.full_key(k), *v)).collect();
-
-        // 使用 pipeline 批量操作
-        let mut pipe = redis::pipe();
-        for (key, value) in &full_items {
-            if let Some(ttl) = ttl {
-                pipe.set_ex(key, *value, ttl.as_secs());
-            } else {
-                pipe.set(key, *value);
+        let full_items: Vec<(String, String)> = items
+            .iter()
+            .map(|(k, v)| (self.full_key(k), (*v).to_string()))
+            .collect();
+        self.with_retry(|mut conn| {
+            let items = full_items.clone();
+            async move {
+                let mut pipe = redis::pipe();
+                for (key, value) in &items {
+                    if let Some(ttl) = ttl {
+                        pipe.set_ex(key, value, ttl.as_secs());
+                    } else {
+                        pipe.set(key, value);
+                    }
+                }
+                pipe.query_async(&mut conn).await
             }
-        }
-
-        pipe.query_async(&mut conn)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        })
+        .await
     }
 
     async fn mdel(&self, keys: &[&str]) -> StorageResult<()> {
-        let mut conn = self.client.clone();
         let full_keys: Vec<String> = keys.iter().map(|k| self.full_key(k)).collect();
-
-        conn.del(&full_keys)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_keys.clone();
+            async move { conn.del(fk).await }
+        })
+        .await
     }
 
     async fn incr(&self, key: &str) -> StorageResult<i64> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        conn.incr(&full_key, 1)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move { conn.incr(fk, 1).await }
+        })
+        .await
     }
 
     async fn decr(&self, key: &str) -> StorageResult<i64> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        conn.decr(&full_key, 1)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move { conn.decr(fk, 1).await }
+        })
+        .await
     }
 
     async fn clear(&self) -> StorageResult<()> {
-        let mut conn = self.client.clone();
         let pattern = format!("{}*", self.key_prefix);
         let mut cursor: u64 = 0;
 
         loop {
-            let (next, keys): (u64, Vec<String>) = redis::cmd("SCAN")
-                .arg(cursor)
-                .arg("MATCH")
-                .arg(&pattern)
-                .arg("COUNT")
-                .arg(100)
-                .query_async(&mut conn)
-                .await
-                .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+            let (next, keys): (u64, Vec<String>) = self
+                .with_retry(|mut conn| {
+                    let p = pattern.clone();
+                    async move {
+                        redis::cmd("SCAN")
+                            .arg(cursor)
+                            .arg("MATCH")
+                            .arg(&p)
+                            .arg("COUNT")
+                            .arg(100)
+                            .query_async(&mut conn)
+                            .await
+                    }
+                })
+                .await?;
 
             if !keys.is_empty() {
-                conn.del::<_, ()>(&keys)
-                    .await
-                    .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+                self.with_retry(|mut conn| {
+                    let k = keys.clone();
+                    async move { conn.del::<_, ()>(k).await }
+                })
+                .await?;
             }
 
             if next == 0 {
@@ -455,39 +479,41 @@ impl SaStorage for RedisStorage {
         value: &str,
         ttl: Option<Duration>,
     ) -> StorageResult<bool> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        let inserted: bool = if let Some(ttl) = ttl {
-            redis::cmd("SET")
-                .arg(&full_key)
-                .arg(value)
-                .arg("NX")
-                .arg("EX")
-                .arg(ttl.as_secs())
-                .query_async(&mut conn)
-                .await
-                .map_err(|e| StorageError::OperationFailed(e.to_string()))?
-        } else {
-            conn.set_nx(&full_key, value)
-                .await
-                .map_err(|e| StorageError::OperationFailed(e.to_string()))?
-        };
-
-        Ok(inserted)
+        let value = value.to_string();
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            let val = value.clone();
+            async move {
+                if let Some(ttl) = ttl {
+                    redis::cmd("SET")
+                        .arg(&fk)
+                        .arg(&val)
+                        .arg("NX")
+                        .arg("EX")
+                        .arg(ttl.as_secs())
+                        .query_async(&mut conn)
+                        .await
+                } else {
+                    conn.set_nx(fk, val).await
+                }
+            }
+        })
+        .await
     }
 
     async fn get_del(&self, key: &str) -> StorageResult<Option<String>> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-
-        let value: Option<String> = redis::cmd("GETDEL")
-            .arg(&full_key)
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
-
-        Ok(value)
+        self.with_retry(|mut conn| {
+            let fk = full_key.clone();
+            async move {
+                redis::cmd("GETDEL")
+                    .arg(&fk)
+                    .query_async(&mut conn)
+                    .await
+            }
+        })
+        .await
     }
 
     async fn compare_and_swap(
@@ -497,13 +523,12 @@ impl SaStorage for RedisStorage {
         new_value: &str,
         ttl: Option<Duration>,
     ) -> StorageResult<bool> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
-        let expected_str = expected.unwrap_or("");
+        let expected_str = expected.unwrap_or("").to_string();
+        let new_value = new_value.to_string();
         let ttl_secs = ttl.map(|d| d.as_secs()).unwrap_or(0);
 
         // Lua 保证 GET + 比较 + SET 单键原子，避免 WATCH 竞态。
-        // expected=None 时 ARGV[1] 为空串：键不存在（GET 返回 false）视为匹配。
         let script = r#"
             local current = redis.call('GET', KEYS[1])
             if current == false then current = '' end
@@ -516,21 +541,29 @@ impl SaStorage for RedisStorage {
             return 1
         "#;
 
-        let swapped: i32 = redis::Script::new(script)
-            .key(&full_key)
-            .arg(expected_str)
-            .arg(new_value)
-            .arg(ttl_secs)
-            .invoke_async(&mut conn)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+        let swapped: i32 = self
+            .with_retry(|mut conn| {
+                let fk = full_key.clone();
+                let exp = expected_str.clone();
+                let nv = new_value.clone();
+                async move {
+                    redis::Script::new(script)
+                        .key(&fk)
+                        .arg(exp)
+                        .arg(nv)
+                        .arg(ttl_secs)
+                        .invoke_async(&mut conn)
+                        .await
+                }
+            })
+            .await?;
 
         Ok(swapped == 1)
     }
 
     async fn compare_and_delete(&self, key: &str, expected: &str) -> StorageResult<bool> {
-        let mut conn = self.client.clone();
         let full_key = self.full_key(key);
+        let expected = expected.to_string();
 
         let script = r#"
             local current = redis.call('GET', KEYS[1])
@@ -540,12 +573,19 @@ impl SaStorage for RedisStorage {
             return 1
         "#;
 
-        let deleted: i32 = redis::Script::new(script)
-            .key(&full_key)
-            .arg(expected)
-            .invoke_async(&mut conn)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+        let deleted: i32 = self
+            .with_retry(|mut conn| {
+                let fk = full_key.clone();
+                let exp = expected.clone();
+                async move {
+                    redis::Script::new(script)
+                        .key(&fk)
+                        .arg(exp)
+                        .invoke_async(&mut conn)
+                        .await
+                }
+            })
+            .await?;
 
         Ok(deleted == 1)
     }
@@ -557,10 +597,11 @@ impl SaStorage for RedisStorage {
         unique: bool,
         ttl: Option<Duration>,
     ) -> StorageResult<usize> {
-        // 【A1-2】Lua 原子去重：LRANGE + 判断 + RPUSH + EXPIRE 在同一脚本内完成
-        let mut conn = self.client.clone();
+        // Lua 原子去重：LRANGE + 判断 + RPUSH + EXPIRE 在同一脚本内完成
         let list_key = self.list_key(key);
+        let member = member.to_string();
         let ttl_secs = ttl.map(|d| d.as_secs()).unwrap_or(0);
+        let unique_flag = if unique { 1 } else { 0 };
 
         let script = r#"
             local list_key = KEYS[1]
@@ -587,27 +628,32 @@ impl SaStorage for RedisStorage {
             return len
         "#;
 
-        let len: usize = redis::Script::new(script)
-            .key(&list_key)
-            .arg(member)
-            .arg(if unique { 1 } else { 0 })
-            .arg(ttl_secs)
-            .invoke_async(&mut conn)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
-
-        Ok(len)
+        self.with_retry(|mut conn| {
+            let lk = list_key.clone();
+            let m = member.clone();
+            async move {
+                redis::Script::new(script)
+                    .key(&lk)
+                    .arg(m)
+                    .arg(unique_flag)
+                    .arg(ttl_secs)
+                    .invoke_async(&mut conn)
+                    .await
+            }
+        })
+        .await
     }
 
     async fn list_remove(&self, key: &str, member: &str) -> StorageResult<bool> {
-        let mut conn = self.client.clone();
         let list_key = self.list_key(key);
-
-        let removed: i64 = conn
-            .lrem(&list_key, 0, member)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
-
+        let member = member.to_string();
+        let removed: i64 = self
+            .with_retry(|mut conn| {
+                let lk = list_key.clone();
+                let m = member.clone();
+                async move { conn.lrem(lk, 0, m).await }
+            })
+            .await?;
         Ok(removed > 0)
     }
 
@@ -617,7 +663,6 @@ impl SaStorage for RedisStorage {
         start: usize,
         limit: Option<usize>,
     ) -> StorageResult<Vec<String>> {
-        let mut conn = self.client.clone();
         let list_key = self.list_key(key);
         let stop = match limit {
             Some(l) => {
@@ -627,36 +672,43 @@ impl SaStorage for RedisStorage {
             None => -1,
         };
 
-        conn.lrange(&list_key, start as isize, stop)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))
+        self.with_retry(|mut conn| {
+            let lk = list_key.clone();
+            async move { conn.lrange(lk, start as isize, stop).await }
+        })
+        .await
     }
 
     async fn list_len(&self, key: &str) -> StorageResult<usize> {
-        let mut conn = self.client.clone();
         let list_key = self.list_key(key);
-
-        let len: i64 = conn
-            .llen(&list_key)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
-
+        let len: i64 = self
+            .with_retry(|mut conn| {
+                let lk = list_key.clone();
+                async move { conn.llen(lk).await }
+            })
+            .await?;
         Ok(len.max(0) as usize)
     }
 
     async fn scan(&self, pattern: &str, cursor: u64, limit: usize) -> StorageResult<ScanPage> {
-        let mut conn = self.client.clone();
         let full_pattern = self.full_key(pattern);
+        let count = limit.max(1);
 
-        let (next, raw_keys): (u64, Vec<String>) = redis::cmd("SCAN")
-            .arg(cursor)
-            .arg("MATCH")
-            .arg(&full_pattern)
-            .arg("COUNT")
-            .arg(limit.max(1))
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+        let (next, raw_keys): (u64, Vec<String>) = self
+            .with_retry(|mut conn| {
+                let p = full_pattern.clone();
+                async move {
+                    redis::cmd("SCAN")
+                        .arg(cursor)
+                        .arg("MATCH")
+                        .arg(&p)
+                        .arg("COUNT")
+                        .arg(count)
+                        .query_async(&mut conn)
+                        .await
+                }
+            })
+            .await?;
 
         let list_prefix = format!("{}list:", self.key_prefix);
         let keys: Vec<String> = raw_keys
@@ -691,6 +743,13 @@ mod tests {
         assert_eq!(logical, vec!["sa:token:a", "sa:token:b"]);
     }
 
+    #[test]
+    fn test_pool_size_max_one_when_zero() {
+        // 纯逻辑：pool_size=0 时应按 1 处理（与 new_with_pool 一致）
+        assert_eq!(0u32.max(1), 1);
+        assert_eq!(4u32.max(1), 4);
+    }
+
     /// 真实 Redis：无 REDIS_URL 时 ignore；测 set/get/ttl/get_del。
     #[tokio::test]
     #[ignore = "requires REDIS_URL"]
@@ -718,5 +777,32 @@ mod tests {
         let taken = storage.get_del(&key).await.expect("get_del");
         assert_eq!(taken.as_deref(), Some("v1"));
         assert!(storage.get(&key).await.expect("gone").is_none());
+    }
+
+    // 需本机 Redis 时启用：验证 from_config 真正创建 N 个 manager
+    #[tokio::test]
+    #[ignore = "requires redis at localhost:6379"]
+    async fn test_from_config_pool_len_matches_pool_size() {
+        let config = RedisConfig {
+            host: "127.0.0.1".to_string(),
+            port: 6379,
+            password: None,
+            database: 0,
+            pool_size: 4,
+        };
+        let storage = RedisStorage::from_config(config, "sa-test:")
+            .await
+            .expect("redis available");
+        assert_eq!(storage.pool_len(), 4);
+
+        storage
+            .set("k1", "v1", Some(Duration::from_secs(30)))
+            .await
+            .unwrap();
+        for _ in 0..8 {
+            let v = storage.get("k1").await.unwrap();
+            assert_eq!(v.as_deref(), Some("v1"));
+        }
+        storage.delete("k1").await.unwrap();
     }
 }

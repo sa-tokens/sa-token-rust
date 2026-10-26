@@ -335,6 +335,9 @@ impl TokenRepo {
     }
 
     /// 执行续签写入并返回更新后的 TokenInfo。
+    ///
+    /// 写失败只打日志，仍返回已刷新的内存副本：读路径已成功，
+    /// 不因续签写抖动把有效 token 误判成鉴权失败。
     pub async fn apply_auto_renew(
         &self,
         token: &str,
@@ -351,7 +354,9 @@ impl TokenRepo {
         };
 
         let key = self.dao.keys().token_info(token);
-        self.dao.set_object(&key, &info, ttl).await?;
+        if let Err(e) = self.dao.set_object(&key, &info, ttl).await {
+            tracing::warn!(error = %e, "auto_renew storage set failed");
+        }
         Ok(info)
     }
 
@@ -410,7 +415,7 @@ mod tests {
             token_style: TokenStyle::Uuid,
             ..Default::default()
         });
-        let dao = Arc::new(crate::dao::SaTokenDao::new(
+        let dao = Arc::new(SaTokenDao::new(
             Arc::new(MemoryStorage::new()),
             config.clone(),
         ));

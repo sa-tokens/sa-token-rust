@@ -1,6 +1,6 @@
 // Author: 金书记
 //
-//! Unified 401 / 403 / 428 JSON rejection bodies.
+//! Unified 401 / 403 / 428 / 503 JSON rejection bodies.
 //!
 //! All framework bindings **must** use these helpers to construct error responses.
 
@@ -17,6 +17,8 @@ pub enum SaTokenHttpStatus {
     Forbidden = 403,
     /// 428 — safe (secondary) authentication required.
     PreconditionRequired = 428,
+    /// 503 — storage temporarily unavailable (not a login failure).
+    ServiceUnavailable = 503,
     /// 500 — unexpected / storage failure.
     InternalServerError = 500,
 }
@@ -26,6 +28,14 @@ pub fn unauthorized_json() -> Value {
     json!({
         "code": SaTokenHttpStatus::Unauthorized as u16,
         "message": messages::AUTH_ERROR,
+    })
+}
+
+/// `{"code":503,"message":"Service temporarily unavailable"}`
+pub fn service_unavailable_json() -> Value {
+    json!({
+        "code": SaTokenHttpStatus::ServiceUnavailable as u16,
+        "message": messages::SERVICE_UNAVAILABLE,
     })
 }
 
@@ -100,6 +110,11 @@ pub fn http_rejection_for(err: &SaTokenError) -> (SaTokenHttpStatus, Value, Opti
         SaTokenError::NotSafe(service) => (
             SaTokenHttpStatus::PreconditionRequired,
             safe_required_json(service),
+            None,
+        ),
+        SaTokenError::StorageError(_) => (
+            SaTokenHttpStatus::ServiceUnavailable,
+            service_unavailable_json(),
             None,
         ),
         _ => (

@@ -160,13 +160,13 @@ use sa_token_plugin_axum::*;  // ✨ Everything you need!
 **Choose your storage backend with features:**
 ```toml
 # Redis storage
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 
 # Multiple storage backends
-sa-token-plugin-axum = { version = "0.2.0", features = ["memory", "redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["memory", "redis"] }
 
 # All storage backends
-sa-token-plugin-axum = { version = "0.2.0", features = ["full"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["full"] }
 ```
 
 **Available features:**
@@ -197,10 +197,10 @@ sa-token-plugin-axum = { version = "0.2.0", features = ["full"] }
 
 ```toml
 # Axum 0.8 + Redis
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 
 # Actix-web 4.x façade (default v4 + memory) + Redis
-sa-token-plugin-actix-web = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-actix-web = { version = "0.2.1", features = ["redis"] }
 
 # Rocket 0.5 / Salvo / Ntex / Gotham — defaults match current supported lines
 sa-token-plugin-rocket = "0.2.0"
@@ -256,7 +256,7 @@ async fn main() {
 **Add Redis feature to your dependency:**
 ```toml
 [dependencies]
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
 ```
 
 **With simplified import:**
@@ -891,7 +891,15 @@ Most documentation is available in 7 languages:
 
 ## 📋 Version History
 
-### Version 0.1.18 (Current)
+### Version 0.2.0 (Current)
+
+**PathAuth hardening (false 401 / storage blips):**
+- 🛡️ **Single-load auth**: `process_auth` / `run_auth_flow` call `load_and_touch` once (no more `is_valid` + `get_token_info` double IO).
+- 🚦 **401 vs 503**: storage failures map to `should_service_unavailable` (HTTP 503 / gRPC Unavailable); real auth failures stay 401.
+- 🚪 **`check_token_on_exclude(false)`**: pure public routes skip storage even when a token header is present.
+- 🔄 **Redis pool**: `RedisConfig.pool_size` creates N `ConnectionManager`s with round-robin + command retry.
+
+### Version 0.1.18
 
 **Authorization data is now persisted to `SaStorage`:**
 - 🗄️ **Permissions & roles moved into `SaStorage`**: `StpUtil` permission/role APIs now delegate to `SaTokenManager`, which reads/writes the storage backend instead of an in-process `HashMap`. Data survives restarts and is shared across nodes when a distributed store (e.g. Redis) is used.

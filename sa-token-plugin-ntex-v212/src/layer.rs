@@ -71,6 +71,12 @@ where
             NtexCapturedRequest::capture(&req, self.state.manager.config.token_name.as_str());
         let flow = run_auth_flow(&adapter, &self.state.manager, self.path_config.as_ref()).await;
 
+        if flow.should_service_unavailable() {
+            return Err(WebError::from(InternalError::new(
+                rejection::service_unavailable_json().to_string(),
+                ntex::http::StatusCode::SERVICE_UNAVAILABLE,
+            )));
+        }
         if flow.should_reject() {
             return Err(WebError::from(InternalError::new(
                 rejection::unauthorized_json().to_string(),

@@ -6,7 +6,7 @@ use http::{Request, Response};
 use sa_token_core::{router::PathAuthConfig, router::run_auth_flow};
 use sa_token_plugin_common::{
     CONTENT_TYPE_JSON, SaTokenHttpStatus, SaTokenState, apply_to_typed_extensions,
-    unauthorized_json, write_json_body,
+    service_unavailable_json, unauthorized_json, write_json_body,
 };
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -81,6 +81,16 @@ where
             let snapshot = AxumRequestSnapshot::capture(&request);
             let flow = run_auth_flow(&snapshot, &state.manager, path_config.as_ref()).await;
 
+            if flow.should_service_unavailable() {
+                let body_bytes = write_json_body(&service_unavailable_json());
+                let mut response = Response::new(ResBody::from(body_bytes));
+                *response.status_mut() = http::StatusCode::SERVICE_UNAVAILABLE;
+                response.headers_mut().insert(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static(CONTENT_TYPE_JSON),
+                );
+                return Ok(response);
+            }
             if flow.should_reject() {
                 let body_bytes = write_json_body(&unauthorized_json());
                 let mut response = Response::new(ResBody::from(body_bytes));

@@ -13,7 +13,7 @@ categories.workspace = true
 description = "Salvo framework integration for sa-token-rust (facade over versioned bindings)"
 
 [dependencies]
-sa-token-plugin-salvo-v079 = { version = "0.2.0", path = "../sa-token-plugin-salvo-v079", optional = true }
+sa-token-plugin-salvo-v079 = { version = "0.2.1", path = "../sa-token-plugin-salvo-v079", optional = true }
 
 [features]
 default = ["v079", "memory"]

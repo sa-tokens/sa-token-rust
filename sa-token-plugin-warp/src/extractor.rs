@@ -3,7 +3,9 @@
 // Warp extractors using common rejection helpers.
 
 use sa_token_core::token::TokenValue;
-use sa_token_plugin_common::rejection::{forbidden_json, forbidden_role_json, unauthorized_json};
+use sa_token_plugin_common::rejection::{
+    forbidden_json, forbidden_role_json, service_unavailable_json, unauthorized_json,
+};
 use warp_03::reject::Reject;
 
 /// Authentication error (401).
@@ -23,6 +25,24 @@ impl Default for AuthError {
 }
 
 impl Reject for AuthError {}
+
+/// Storage temporarily unavailable (503).
+#[derive(Debug)]
+pub struct ServiceUnavailableError;
+
+impl ServiceUnavailableError {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ServiceUnavailableError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Reject for ServiceUnavailableError {}
 
 /// Permission error (403).
 #[derive(Debug)]
@@ -96,6 +116,8 @@ pub async fn handle_rejection(
             404,
             serde_json::json!({"code": 404, "message": "Not Found"}),
         )
+    } else if err.find::<ServiceUnavailableError>().is_some() {
+        (503, service_unavailable_json())
     } else if err.find::<AuthError>().is_some() {
         (401, unauthorized_json())
     } else if err.find::<PermissionError>().is_some() {

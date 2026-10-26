@@ -33,8 +33,8 @@ use sa_token_plugin_axum::*;
 根 crate / core 可选 feature：`fory` 启用二进制 `ForySerializer`。默认编码仍是 JSON — 见 [可插拔序列化](/zh/guide/storage.md)。
 
 ```toml
-sa-token-plugin-axum = { version = "0.2.0", features = ["redis"] }
-# sa-token = { version = "0.2.0", features = ["fory"] }
+sa-token-plugin-axum = { version = "0.2.1", features = ["redis"] }
+# sa-token = { version = "0.2.1", features = ["fory"] }
 ```
 
 ### 选择插件

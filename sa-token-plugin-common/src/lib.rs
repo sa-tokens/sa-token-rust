@@ -18,8 +18,8 @@ pub mod state;
 pub use ext::{SaLoginId, apply_to_typed_extensions};
 pub use rejection::{
     CONTENT_TYPE_JSON, SaTokenHttpStatus, WWW_AUTHENTICATE, forbidden_json, forbidden_role_json,
-    http_rejection_for, safe_required_json, unauthorized_basic_json, unauthorized_json,
-    write_json_body, www_authenticate_basic,
+    http_rejection_for, safe_required_json, service_unavailable_json, unauthorized_basic_json,
+    unauthorized_json, write_json_body, www_authenticate_basic,
 };
 pub use snapshot::CapturedRequest;
 pub use state::{SaTokenState, SaTokenStateBuilder};

@@ -115,6 +115,11 @@ where
                 .insert(SaTokenGrpcPath(captured.get_path()));
             let flow = run_auth_flow(&captured, &state.manager, path_config.as_ref()).await;
 
+            if flow.should_service_unavailable() {
+                let mut resp = Response::new(ResBody::default());
+                *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+                return Ok(resp);
+            }
             if flow.should_reject() {
                 let mut resp = Response::new(ResBody::default());
                 *resp.status_mut() = StatusCode::UNAUTHORIZED;

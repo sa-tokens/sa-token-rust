@@ -11,7 +11,7 @@ Cargo.lock
 *.swp
 *.swo
 *~
-
+Cargo.lock
 # OS
 .DS_Store
 Thumbs.db

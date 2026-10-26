@@ -82,7 +82,7 @@ sso.is_allowed_origin("https://app.example");
 Enable on `sa-token-core`:
 
 ```toml
-sa-token-core = { version = "0.2.0", features = ["sso-http"] }
+sa-token-core = { version = "0.2.1", features = ["sso-http"] }
 ```
 
 Provides:

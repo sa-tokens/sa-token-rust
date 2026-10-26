@@ -88,6 +88,12 @@ impl tonic::service::Interceptor for GrpcServerInterceptor {
         let path = TonicCapturedRequest::resolve_grpc_path(&req);
         let flow = self.run_flow_sync(req.metadata(), path);
 
+        if flow.should_service_unavailable() {
+            return Err(Status::new(
+                Code::Unavailable,
+                messages::SERVICE_UNAVAILABLE,
+            ));
+        }
         if flow.should_reject() {
             return Err(Status::new(Code::Unauthenticated, messages::AUTH_ERROR));
         }
