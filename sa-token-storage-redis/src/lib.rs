@@ -152,7 +152,7 @@ impl RedisStorage {
         key_prefix: impl Into<String>,
         pool_size: u32,
     ) -> StorageResult<Self> {
-        let n = pool_size.max(1) as usize;
+        let n = pool_connection_count(pool_size);
         let client =
             Client::open(redis_url).map_err(|e| StorageError::ConnectionError(e.to_string()))?;
 
@@ -506,12 +506,7 @@ impl SaStorage for RedisStorage {
         let full_key = self.full_key(key);
         self.with_retry(|mut conn| {
             let fk = full_key.clone();
-            async move {
-                redis::cmd("GETDEL")
-                    .arg(&fk)
-                    .query_async(&mut conn)
-                    .await
-            }
+            async move { redis::cmd("GETDEL").arg(&fk).query_async(&mut conn).await }
         })
         .await
     }
@@ -724,6 +719,11 @@ impl SaStorage for RedisStorage {
     }
 }
 
+/// `pool_size == 0` 按 1 条连接处理，避免空池。
+fn pool_connection_count(pool_size: u32) -> usize {
+    pool_size.max(1) as usize
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -745,9 +745,8 @@ mod tests {
 
     #[test]
     fn test_pool_size_max_one_when_zero() {
-        // 纯逻辑：pool_size=0 时应按 1 处理（与 new_with_pool 一致）
-        assert_eq!(0u32.max(1), 1);
-        assert_eq!(4u32.max(1), 4);
+        assert_eq!(pool_connection_count(0), 1);
+        assert_eq!(pool_connection_count(4), 4);
     }
 
     /// 真实 Redis：无 REDIS_URL 时 ignore；测 set/get/ttl/get_del。

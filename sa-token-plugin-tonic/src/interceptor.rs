@@ -136,6 +136,9 @@ pub fn get_bearer_token_from_request<T>(
 
 /// 中文: 从请求中验证 token 并获取登录 ID（异步，兼容旧代码）
 /// English: Validate token from request and get login ID (async, legacy compat)
+///
+/// `tonic::Status` 是 gRPC 对外错误类型，体积超过 clippy 阈值；改成 `Box<Status>` 会破坏现有调用方。
+#[allow(clippy::result_large_err)]
 pub async fn validate_token_from_request<T>(
     state: &SaTokenState,
     request: &Request<T>,

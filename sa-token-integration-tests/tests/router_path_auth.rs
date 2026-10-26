@@ -5,8 +5,8 @@
 
 mod common;
 
-use common::setup;
 use async_trait::async_trait;
+use common::setup;
 use sa_token_adapter::context::SaRequest;
 use sa_token_adapter::storage::{SaStorage, ScanPage, StorageError, StorageResult};
 use sa_token_core::router::{
@@ -340,12 +340,7 @@ impl SaStorage for FailingStorage {
     async fn clear(&self) -> StorageResult<()> {
         Err(StorageError::OperationFailed("injected failure".into()))
     }
-    async fn set_if_absent(
-        &self,
-        _: &str,
-        _: &str,
-        _: Option<Duration>,
-    ) -> StorageResult<bool> {
+    async fn set_if_absent(&self, _: &str, _: &str, _: Option<Duration>) -> StorageResult<bool> {
         Err(StorageError::OperationFailed("injected failure".into()))
     }
     async fn get_del(&self, _: &str) -> StorageResult<Option<String>> {
@@ -375,12 +370,7 @@ impl SaStorage for FailingStorage {
     async fn list_remove(&self, _: &str, _: &str) -> StorageResult<bool> {
         Err(StorageError::OperationFailed("injected failure".into()))
     }
-    async fn list_range(
-        &self,
-        _: &str,
-        _: usize,
-        _: Option<usize>,
-    ) -> StorageResult<Vec<String>> {
+    async fn list_range(&self, _: &str, _: usize, _: Option<usize>) -> StorageResult<Vec<String>> {
         Err(StorageError::OperationFailed("injected failure".into()))
     }
     async fn list_len(&self, _: &str) -> StorageResult<usize> {
@@ -517,13 +507,7 @@ async fn test_exclude_check_token_on_exclude_false_skips_storage() {
         .exclude(vec!["/health".into()])
         .check_token_on_exclude(false);
     let before = counter.get_count();
-    let auth = process_auth(
-        "/health",
-        Some("garbage-token".into()),
-        &path_config,
-        &mgr,
-    )
-    .await;
+    let auth = process_auth("/health", Some("garbage-token".into()), &path_config, &mgr).await;
     assert_eq!(
         counter.get_count(),
         before,
@@ -545,7 +529,13 @@ async fn test_process_auth_single_load_get_delta() {
     let sets_after_login = counter.set_count();
 
     let path_config = PathAuthConfig::new().include(vec!["/api/**".into()]);
-    let auth = process_auth("/api/me", Some(token.as_str().to_string()), &path_config, &mgr).await;
+    let auth = process_auth(
+        "/api/me",
+        Some(token.as_str().to_string()),
+        &path_config,
+        &mgr,
+    )
+    .await;
 
     assert!(auth.is_valid);
     assert!(!auth.should_reject());
@@ -570,13 +560,7 @@ async fn test_exclude_storage_failure_does_not_503() {
         .include(vec!["/api/**".into()])
         .exclude(vec!["/health".into()]);
     // exclude 默认仍软校验：存储失败但不 need_auth → 不 401 也不 503
-    let auth = process_auth(
-        "/health",
-        Some("any".into()),
-        &path_config,
-        &mgr,
-    )
-    .await;
+    let auth = process_auth("/health", Some("any".into()), &path_config, &mgr).await;
     assert!(!auth.need_auth);
     assert!(!auth.should_reject());
     assert!(!auth.should_service_unavailable());
